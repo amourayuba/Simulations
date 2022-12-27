@@ -1,6 +1,9 @@
 from merger_rate import *
+import os
+import pandas as pd
 import matplotlib.pyplot as plt
 import matplotlib as mpl
+import csv
 
 params = {'legend.fontsize': 7,
           'legend.handlelength': 2}
@@ -13,25 +16,100 @@ plt.rcParams.update(params)
 #############--------------- MxSy Simulations --------------#############################
 
 class Simulation:
-    def __init__(self, name, om0, sig8):
-        self.name = name
-        self.om0 = om0
-        self.sig8 = sig8
-
-    def get_redshifts(self, mrate_path):
+    '''A class of objects referring to a Dark Matter only simulation'''
+    def __init__(self, name, om0, sig8, path):
+        self.name = name #name of the simulation
+        self.om0 = om0 #Value of Omega_m for the simulation
+        self.sig8 = sig8 #Value of sigma_8
+        self.path = path #The base (absolute) path of that simulation. All simulation paths have to be structured the same.
+    def get_redshifts(self):
+        '''Gets the list of redshifts of each snapshot'''
         if self.name[0] == 'M':
-            return np.loadtxt(mrate_path + '/progs_desc/redshifts/M03S08.txt')
+            return np.loadtxt(self.path + '/redshifts/M03S08.txt')
+        elif os.path.exists(self.path + '/redshifts/{}.txt'.format(self.name)):
+            return np.loadtxt(self.path + '/redshifts/{}.txt'.format(self.name))
         else:
-            return np.loadtxt(mrate_path + '/progs_desc/redshifts/{}.txt'.format(self.name))
+            return np.loadtxt(self.path + '/redshifts/mxsy_reds.txt')[::-1]
 
-    def get_desc_prog(self, mrate_path, snap, wpos=False):
-        mds = np.load(mrate_path + '/progs_desc/{}_desc_mass_snap{}.npy'.format(self.name, snap), allow_pickle=True)
-        mprg = np.load(mrate_path + '/progs_desc/{}_prog_mass_snap{}.npy'.format(self.name, snap), allow_pickle=True)
+    def get_desc_prog(self, snap, wpos=False):
+        ''' Gets the descendant and progenitor masses if they are already saved'''
+        mds = np.load(self.path + '/progs_desc/{}_desc_mass_snap{}.npy'.format(self.name, snap), allow_pickle=True)
+        mprg = np.load(self.path + '/progs_desc/{}_prog_mass_snap{}.npy'.format(self.name, snap), allow_pickle=True)
         if wpos:
-            prog_pos = np.load(mrate_path + '/progs_desc/{}_prog_pos_snap{}.npy'.format(self.name, snap),
-                               allow_pickle=True)
+            prog_pos = np.load(self.path + '/progs_desc/{}_prog_pos_snap{}.npy'.format(self.name, snap),
+                               allow_pickle=True) #Gets the prog positions if needed.
             return mds, mprg, prog_pos
         return mds, mprg
+
+    def make_prog_desc(self, snapshot, usepos=False, save=True):
+        '''Makes a list of descendant masses and each corresponding prog mass'''
+        f_halos = self.path + self.name +'/halos/'   #Typically where the halos are stored
+        f_mtrees = self.path + self.name + '/mtrees/' #Typically where the merger trees are stored
+        with open(self.path + self.name + '/'+self.name+'_prefixes.txt') as file:
+            prefs = file.read().splitlines() #Names of each snapshot prefix.
+
+        d_halos = pd.read_table(f_halos + prefs[snapshot] + '.AHF_halos', delim_whitespace=True, header=0)
+        p_halos = pd.read_table(f_halos + prefs[snapshot + 1] + '.AHF_halos', delim_whitespace=True, header=0)
+
+        desc_mass = np.array(d_halos['Mhalo(4)']) #halo masses at snap
+        prog_mass = np.array(p_halos['Mhalo(4)']) #halo masses at snap+1
+
+        # desc_mass = np.loadtxt(f_halos + prefs[snapshot] + '.AHF_halos')[:, 3]
+        # prog_mass = np.loadtxt(f_halos + prefs[snapshot + 1] + '.AHF_halos')[:, 3]
+        id4_desc = np.loadtxt(f_halos + prefs[snapshot] + '.AHF_halos')[4, 0] #random halo id at snap
+        id4_prog = np.loadtxt(f_halos + prefs[snapshot + 1] + '.AHF_halos')[4, 0] #random halo id at snap+1
+
+        if id4_desc > len(desc_mass): #test whether ids are from 0 tp len(desc_mass) or not
+            dic_desc = dict(zip(np.array(d_halos['#ID(1)']).astype(int), desc_mass)) #If ids are not ranked, need to use a dictionnary for quick access
+
+        if id4_prog > len(prog_mass):
+            dic_prog = dict(zip(np.array(p_halos['#ID(1)']).astype(int), prog_mass))
+
+        if usepos:
+            Xcs, Ycs, Zcs = np.loadtxt(f_halos + prefs[snapshot + 1] + '.AHF_halos')[:, 5], np.loadtxt(
+                f_halos + prefs[snapshot + 1] + '_halos')[:, 6], np.loadtxt(f_halos + prefs[snapshot + 1] + '_halos')[:,
+                                                                 7]
+        mmin = np.min(desc_mass)
+        desc, progs = [], []
+        with open(f_mtrees + prefs[snapshot][:-7] + '_mtree') as file:
+            lines = csv.reader(file, delimiter=' ', skipinitialspace=True)
+            next(lines)  # skips the first line
+            for j in range(len(desc_mass)):  # loop over desc
+                try:
+                    desc_id, npr = next(lines)
+                    desc.append(int(desc_id))
+                    hprog = []
+                    for i in range(int(npr)):  # for each desc halo, save ids of all its progenitors
+                        hprog.append(int(next(lines)[0]))
+                    progs.append(hprog)
+                except StopIteration:
+                    val = 5
+        mds, mprg, pos_prg = [], [], []
+        for i in range(len(desc)):
+            if id4_desc > len(desc):
+                mds.append(dic_desc[desc[i]])
+            else:
+                mds.append(desc_mass[desc[i]])
+            if id4_prog > len(progs):
+                prg = []
+                for prid in progs[i]:
+                    prg.append(dic_prog[prid])
+                mprg.append(prg)
+            else:
+                mprg.append(prog_mass[progs[i]])
+            if usepos:
+                pos_prg.append(np.array([Xcs[progs[i]], Ycs[progs[i]], Zcs[progs[i]]]).transpose())
+        del (desc_mass, prog_mass, desc, progs)
+
+
+        if save:
+            np.save(self.path + '/progs_desc/{}_desc_mass_snap{}.npy'.format(self.name, snapshot), np.array(mds, dtype=object))
+            np.save(self.path + '/progs_desc/{}_prog_mass_snap{}.npy'.format(self.name, snapshot), np.array(mprg, dtype=object))
+            if usepos:
+                np.save(self.path + '/progs_desc/{}_prog_pos_snap{}.npy'.format(self.name, snapshot), np.array(pos_prg, dtype=object))
+        if usepos:
+            return np.array(mds, dtype=object), np.array(mprg, dtype=object), np.array(pos_prg, dtype=object)
+        return np.array(mds, dtype=object), np.array(mprg, dtype=object)
 
     def get_mrat(self, pgmasses, wpos=False, m=None, pos_s=None):
         if wpos:
@@ -44,11 +122,11 @@ class Simulation:
             pgratios = pgmasses / np.max(pgmasses)
             return pgratios[np.where(pgratios < 1)]
 
-    def dndxi(self, mrate_path, snap, mlim, bins=20, ximin=1e-2, ximax=1.0, wpos=False):
+    def dndxi(self, snap, mlim, bins=20, ximin=1e-2, ximax=1.0, wpos=False):
         if wpos:
-            mds, mprg, prog_pos = self.get_desc_prog(mrate_path, snap, wpos)
+            mds, mprg, prog_pos = self.get_desc_prog(snap, wpos)
         else:
-            mds, mprg = self.get_desc_prog(mrate_path, snap, wpos)
+            mds, mprg = self.get_desc_prog(snap, wpos)
         mmin = np.min(mds)
         nmgs = np.zeros(bins)
         tnds = np.zeros(bins + 1)
@@ -82,16 +160,16 @@ class Simulation:
                                     nmgs[j] += 1
         return nmgs, tnds
 
-    def N_of_xi(self, mrate_path, snaps, mlim, mlim_rat=1e3, ximin=0.01, resol=100, wpos=False):
+    def N_of_xi(self, snaps, mlim, mlim_rat=1e3, ximin=0.01, resol=100, wpos=False):
         mres = np.zeros((resol, len(snaps)))
         tnds = np.zeros((resol, len(snaps)))
         dexis = np.logspace(np.log10(ximin), 0, resol)
         for k in range(len(snaps)):
             snap = snaps[k]
             if wpos:
-                mds, mprg, prog_pos = self.get_desc_prog(mrate_path, snap, wpos)
+                mds, mprg, prog_pos = self.get_desc_prog(snap, wpos)
             else:
-                mds, mprg = self.get_desc_prog(mrate_path, snap, wpos)
+                mds, mprg = self.get_desc_prog(snap, wpos)
             mmin = np.min(mds)
             for i in range(len(mds)):
                 if mlim < mds[i] < mlim_rat * mlim:
@@ -120,281 +198,120 @@ class Simulation:
         return mres, tnds
 
 
-# sim = 'M03S08'
-# mrate_path = '/home/painchess/asus_fedora/merger_rate'
-# sim1 = Simulation('M03S08', 0.3, 0.8)
-# snapshots = [2, 6, 12, 20]
-# mlim, bins, ximin, ximax = 5e13, 20, 1e-2, 1
-# xis = np.logspace(np.log10(ximin), np.log10(ximax), bins + 1)
-# dxis = xis[1:] - xis[:-1]
-# m_reds = np.loadtxt('/home/painchess/asus_fedora/simulation_reading/simu_redshifts.txt')[::-1]
-# colors = ['blue', 'red', 'green', 'orange']
-# for i in range(len(snapshots)):
-#     snap = snapshots[i]
-#     nmgs, tds = sim1.dndxi(mrate_path, 4, mlim, bins, ximin, ximax, wpos=True)
-#     dz = m_reds[snap + 1] - m_reds[snap]
-#     y = nmgs / dz / dxis / tds[1:]
-#     poisson = np.sqrt(nmgs) / dz / tds[1:] / dxis
-#     plt.plot(xis[1:-1], ell_mrate_per_n(5 * mlim, m_reds[snap], xis), '--', color=colors[i], linewidth=2)
-#     plt.scatter(xis[1:], y, color=colors[i], label='z={:1.1f}'.format(m_reds[snap]))
-#     plt.fill_between(xis[1:], y - poisson, y + poisson, color=colors[i], alpha=0.2)
-# plt.xscale('log')
-# plt.yscale('log')
-# plt.xlabel(r'$\xi =M_1/M_2$', size=15)
-# plt.ylabel(r'dN/dz/d$\xi$ [mergers/halo/dz]')
-# plt.ylim(1e-2, 1e3)
-# plt.title(r'$M_0$ = {:2.1e}'.format(mlim))
-# plt.legend()
-# plt.show()
+    def plot_tests(self, test, snaps, vol=500, h=0.7, conctype=1):
+        f_halos = self.path + self.name +'/halos/'
+        with open(self.path + self.name + '/'+self.name+'_prefixes.txt') as file:
+            prefs = file.read().splitlines()
+        reds = self.get_redshifts()
+        if test == 'hmf':
+            plt.figure()
+            plt.xlabel('Mass', size=20)
+            plt.ylabel('N halos/mass dex/Mpc^3')
+            plt.xscale('log')
+            plt.yscale('log')
+            for j in range(len(snaps)):
+                snapshot = snaps[j]
+                zn = reds[snapshot]
+                halos = pd.read_table(f_halos + prefs[snapshot] + '.AHF_halos', delim_whitespace=True, header=0)
+                print(prefs[snapshot], zn)
+                mass_ahf = np.array(halos['Mhalo(4)'])
+                bins = np.logspace(np.log10(np.min(mass_ahf)), np.log10(np.max(mass_ahf)), 80)
+                unit = np.log(bins[1:] / bins[:-1])
+                hist = np.histogram(mass_ahf, bins=bins)
+                hist_dens = hist[0] / vol**3
+                my_cosmo = {'flat': True, 'H0': 100 * h, 'Om0': self.om0, 'Ode0':1-self.om0, 'Ob0': 0.0482, 'sigma8': self.sig8,
+                            'ns': 0.965}
+                cosmo = cosmology.setCosmology('my_cosmo', my_cosmo)
+                #truebins = np.sqrt(bins[:-1] * bins[1:])
+                truebins = bins[1:]
+                mfunc = mass_function.massFunction(truebins, zn, mdef='200c', model='tinker08', q_out='dndlnM')
 
-ys, poisson = [], []
-sim_names = ['M25S08', 'M03S08', 'M35S08', 'M03S07', 'M03S09', 'Illustris', 'bolshoiP', 'bolshoiW', 'm25s85',
-             'm2s8', 'M25S07', 'M25S09']
-omegas = [0.25, 0.3, 0.35, 0.3, 0.3, 0.309, 0.307, 0.27, 0.25, 0.2, 0.25, 0.25]
-sigmas = [0.8, 0.8, 0.8, 0.7, 0.9, 0.816, 0.82, 0.82, 0.85, 0.8, 0.7, 0.9]
+                plt.plot(truebins, hist_dens / unit[0], '-.', color='C{}'.format(j),
+                         label='1024'[:3*(j==0)] +' {} snapshot={}'.format(self.name, snapshot))
+                plt.plot(truebins, mfunc, color='C{}'.format(j), label='Colossus'[:8*(j==0)])
+            plt.legend()
+            plt.show()
 
-colors = ['blue', 'red', 'green', 'orange']
-lss = ['-', '--', '-.']
-markers = ['s', 'v', 'o', 'x']
-resol, ximin, ximax = 100, 1e-2, 1
+        if test == 'conc':
+            for j in range(len(snaps)):
+                snapshot = snaps[j]
+                halos = pd.read_table(f_halos + prefs[snapshot] + '.AHF_halos', delim_whitespace=True, header=0)
+                if conctype ==1:
+                    conc = np.array(halos['cNFW(43)'])
+                if conctype == 2:
+                    Rvir = np.array(halos['Rhalo(12)'])
+                    Vvir = np.sqrt(G * mass_ahf / (0.001 * Rvir))
+                    Vmax = np.array(halos['Vmax(17)'])
+                    conc = Vmax / Vvir
+
+                mass_ahf = np.array(halos['Mhalo(4)'])
+                plt.figure()
+                h, xedges, yedges, im = plt.hist2d(np.log10(mass_ahf), conc, range=[[np.log10(3*np.min(mass_ahf)), 14], [2.3, 14]], bins=80)
+                plt.xlabel(r'log Mass [$M_\odot$/h]', size=15)
+                plt.ylabel('c', size=20)
+                plt.show()
+
+                plt.figure()
+                for k in range(1, 7):
+                    plt.plot(yedges[1:], h[10 * k, :], label='log M = {:2.1f}'.format(xedges[10 * k]))
+                plt.legend()
+                plt.xlabel('c', size=20)
+                plt.ylabel('N', size=20)
+                plt.show()
+
+                plt.figure()
+                av = np.matmul(h, yedges[1:]) / np.sum(h, axis=1)
+                plt.plot(xedges[1:], av)
+                plt.xlabel(r'log Mass [$M_\odot$/h]', size=15)
+                plt.ylabel('<C>', size=20)
+                plt.show()
+
+##############---------------- Getting the merger rates from sims -----####################
+
+
+sim_names = ['M25S07', 'M25S08', 'M25S09', 'M03S07','M03S08', 'M03S09', 'M35S07', 'M35S08', 'M35S09',
+             'Illustris', 'bolshoiP', 'bolshoiW', 'm25s85', 'm2s8', 'm4s7', 'm4s8', 'm2s9', 'M03S08b',
+             'm3s8_50', 'm3s8', 'm35s75', 'm4s9', 'm3s9']
+omegas = [0.25, 0.25, 0.25, 0.3, 0.3, 0.3, 0.35, 0.35, 0.35, 0.309, 0.307, 0.27, 0.25, 0.2, 0.4, 0.4, 0.2, 0.3, 0.3
+          ,0.3, 0.35, 0.4, 0.3]
+sigmas = [0.7, 0.8, 0.9, 0.7, 0.8, 0.9, 0.7, 0.8, 0.9, 0.816, 0.82, 0.82, 0.85, 0.8, 0.7, 0.8, 0.9, 0.8, 0.8
+          ,0.8, 0.75, 0.9, 0.9]
+mrate_path = '/home/painchess/asus_fedora/merger_rate'
+old_path = '/home/painchess/disq2/ahf-v1.0-101/'
+localpath = '/home/painchess/sims/'
+externalpath = '/home/painchess/mounted/HR_sims/niagara/'
 illustris_path = '/home/painchess/mounted/TNG300-625/output'
-log_fracs = [0, 0.25, 0.5]  # log space fraction between ximin and ximax
-max_fracs = [0.25, 0.5, 0.75]
-ximins = (resol * np.array(log_fracs)).astype(int)
-ximaxs = (resol * np.array(max_fracs)).astype(int)
-dexis = np.logspace(np.log10(ximin), np.log10(ximax), resol)
-sim_selec1 = np.array([0, 1, 2, 9, 5])
-sim_selec2 = np.array([1, 3, 4, 9, 5])
-sim_selec3 = np.array([0, -1, -2, -4])
-zmin, zmax = 0.01, 0.45
-sim_res, pois_res = np.zeros((len(sim_selec1), resol - 1)), np.zeros((len(sim_selec1), resol - 1))
-c_param = '\sigma_8'
-om1 = 0.3
-for i in range(len(sim_selec1)):
-    if c_param == '\Omega_m':
-        j = sim_selec1[i]
-    elif om1 == 0.3:
-        j = sim_selec2[i]
-    else:
-        j = sim_selec3[i]
-    sim1 = Simulation(sim_names[j], omegas[j], sigmas[j])
-    mrate_path = '/home/painchess/asus_fedora/merger_rate'
-    reds = sim1.get_redshifts(mrate_path)
-    snap_min, snap_max = np.min(np.where(reds >= zmin)) + 1, np.min(np.where(reds >= zmax)) + 1
-    snapshots = np.arange(snap_min, snap_max, 1)
-    if sim1.name[0] == 'M':
-        mlim = 5e13
-    elif sim1.name[0] == 'I':
-        mlim = 1e13
-        mrate_path = illustris_path
-    elif sim1.name[0] == 'm':
-        mlim = 1e14
-    else:
-        mlim = 1e12
-    mres, tnds = sim1.N_of_xi(mrate_path, snapshots, mlim, resol=resol, wpos=False)
-    dmres = (mres[:-1, :] - mres[1:, :]) / tnds[1:, :]
-    ps = np.sqrt((mres[:-1, :] - mres[1:, :])*(1+(mres[:-1, :] - mres[1:, :])/tnds[1:, :]))/tnds[1:, :]
-    #ps = np.sqrt(mres[:-1, :] - mres[1:, :])*(1-1/np.sqrt(tnds[1:, :]))/tnds[1:, :]
-    #ps = np.sqrt(mres[:-1, :] - mres[1:, :]) / tnds[1:, :]
-    nmres = np.cumsum(dmres[::-1], axis=0)[::-1, :]
-    nps = np.sqrt(np.cumsum(ps[::-1]**2, axis=0))[::-1, :]
 
-    tot_integ = np.sum(nmres, axis=1)
-    #tot_ps = np.sqrt(np.sum(nps**2, axis=1))
-    tot_ps = np.sum(nps, axis=1)
-    sim_res[i, :] = tot_integ
-    pois_res[i, :] = tot_ps
 
-# fig, axs = plt.subplots(2, 2, figsize=[7, 7], dpi=500)
-# save = False
-# zresol, omresol = 100, 50
-# nreds = np.linspace(zmin, zmax, zresol)
-# dz = (zmax - zmin) / zresol
-# if c_param == '\Omega_m':
-#     a_omegas = np.linspace(0.15, 0.45, omresol)
-# else:
-#     a_sigmas = np.linspace(0.6, 1, omresol)
-# amlim = 1e13
-# for n in range(len(ximins)):
-#     ax = axs[n // 2, n % 2]
-#     i = ximins[n]
-#     #l = ximaxs[len(ximins) - 1]
-#     l = ximaxs[n]
-#     xmax = dexis[l-1]
-#     #xmax = max_fracs[len(ximins) - 1]
 #
-#     if save:
-#         res = []
-#         for m in range(omresol):
-#             diff_nmerg = np.zeros(zresol)
-#             if c_param == '\Omega_m':
-#                 omg = a_omegas[m]
-#                 s8 = 0.8
-#             else:
-#                 s8 = a_sigmas[m]
-#                 omg = 0.3
-#             for k in range(zresol):
-#                 diff_nmerg[k] = integ_mrate(3 * amlim, nreds[k], xi_min=dexis[i], xi_max=xmax, om0=omg, sig8=s8)
-#             res.append(np.sum(diff_nmerg) * dz)
-#         if c_param == '\Omega_m':
-#             np.savetxt('anal_ntotmerg_zmin{}_zmax{:1.1f}_mlim{:2.1e}_ximin{:1.2f}'
-#                        '_ximax{:1.2f}_omegas.txt'.format(zmin, zmax, amlim, dexis[i], xmax), np.array(res))
-#         else:
-#             np.savetxt('anal_ntotmerg_zmin{}_zmax{:1.1f}_mlim{:2.1e}_ximin{:1.2f}'
-#                        '_ximax{:1.2f}_sigmas.txt'.format(zmin, zmax, amlim, dexis[i], xmax), np.array(res))
+# s = -1
+# sim38 = Simulation(sim_names[s], omegas[s], sigmas[s], old_path)
+# reds = sim38.get_redshifts()
+
+#snaps = np.arange(21, 41, 4)
+
+# snapshots = [3, 5, 8, 15]
+# for snap in snapshots:
+#     nmgs, tnds = sim38.dndxi(snap, 1e13)
+#     red = reds[snap]
+#     dz = reds[snap+1]-reds[snap]
+#     ximin, ximax, resol = 1e-2, 1, 20
+#     xis = np.logspace(np.log10(ximin), np.log10(ximax), resol+1)
+#     dxis, ximeans = xis[1:]-xis[:-1], np.sqrt(xis[1:]*xis[:-1])
 #
-#     else:
-#         if c_param == '\Omega_m':
-#             res = np.loadtxt('anal_ntotmerg_zmin{}_zmax{:1.1f}_mlim{:2.1e}_ximin{:1.2f}_'
-#                              'ximax{:1.2f}_omegas.txt'.format(zmin, zmax, amlim, dexis[i], xmax))
-#         else:
-#             res = np.loadtxt('anal_ntotmerg_zmin{}_zmax{:1.1f}_mlim{:2.1e}_'
-#                              'ximin{:1.2f}_ximax{:1.2f}_sigmas.txt'.format(zmin, zmax, amlim, dexis[i], xmax))
-#     if c_param == '\Omega_m':
-#         ax.plot(a_omegas, res, label=r'{:1.2f} $<\xi<$ {:1.2f}'.format(dexis[i], xmax))
-#     else:
-#         ax.plot(a_sigmas, res, label=r'{:1.2f} $<\xi<$ {:1.2f}'.format(dexis[i], xmax))
-#     if c_param == '\Omega_m':
-#         ax.errorbar(np.array(omegas)[sim_selec1[:3]], sim_res[:3, i] - sim_res[:3, l-2], pois_res[:3, i], fmt='o',
-#                     label='MxSy'[:4 * (n == 0)])
-#         ax.errorbar(np.array(omegas)[sim_selec1[4]], sim_res[-1, i] - sim_res[-1, l-2], pois_res[-1, i], fmt='s',
-#                     label='Illustris'[:8 * (n == 0)])
-#         ax.errorbar(np.array(omegas)[sim_selec1[3:-1]], sim_res[3:-1, i] - sim_res[3:-1, l-2], pois_res[3:-1, i], fmt='v',
-#                     label='New HR sims'[:10 * (n == 0)])
-#     elif om1 == 0.3:
-#         ax.errorbar(np.array(sigmas)[sim_selec2[:3]], sim_res[:3, i] - sim_res[:3, l-2], pois_res[:3, i], fmt='o',
-#                     label='MxSy'[:4 * (n == 0)])
-#         ax.errorbar(np.array(sigmas)[sim_selec2[4]], sim_res[4, i] - sim_res[4, l-2], pois_res[4, i], fmt='s',
-#                     label='Illustris'[:9 * (n == 0)])
-#         ax.errorbar(np.array(sigmas)[sim_selec2[3]], sim_res[3, i] - sim_res[3, l-2], pois_res[3, i], fmt='v',
-#                     label='New HR sim'[:10 * (n == 0)])
-#     else:
-#         ax.errorbar(np.array(sigmas)[sim_selec2[:3]], sim_res[:3, i] - sim_res[:3, l-2], pois_res[:3, i], fmt='o',
-#                     label='MxSy'[:4 * (n == 0)])
-#         ax.errorbar(np.array(sigmas)[sim_selec2[3]], sim_res[3, i] - sim_res[3, l-2], pois_res[3, i], fmt='v',
-#                     label='New HR sim'[:10 * (n == 0)])
-#
-#     if n % 2 == 0:
-#         ax.set_ylabel(r'dN(>$\xi$) [mergers/halo]')
-#     if n // 2 == 1:
-#         ax.set_xlabel(r'${}$'.format(c_param), size=15)
-#     ax.legend()
-# fig.suptitle(r'{}<z<{}, log $M/M_\odot$>{:2.1f}'.format(zmin, zmax, np.log10(amlim)), size=15)
-# #plt.savefig(r'integ_N_tot_${}$_m{:2.1f}.pdf'.format(c_param, np.log10(amlim)), dpi=650, bbox_inches='tight', facecolor='white',
-#             #transparent=False)
+#     y = nmgs/dz/dxis/tnds[:-1]
+#     plt.loglog(ximeans,  y, 'o', color='C{}'.format(snap))
+#     plt.loglog(xis[1:-1], ell_mrate_per_n(5e13, red, xis, om0=omegas[s], sig8=sigmas[s]), color='C{}'.format(snap), linewidth=2)
 # plt.show()
 
+s = -3
+sim38 = Simulation(sim_names[s], omegas[s], sigmas[s], localpath)
+reds = sim38.get_redshifts()
+snaps = np.arange(1, 20, 4)
+sim38.plot_tests('conc', snaps, vol=500)
 
-#fig, axs = plt.subplots(2, 2, figsize=[7, 7], dpi=500)
-save = False
-zresol, omresol = 100, 50
-nreds = np.linspace(zmin, zmax, zresol)
-dz = (zmax - zmin) / zresol
-if c_param == '\Omega_m':
-    a_omegas = np.linspace(0.15, 0.45, omresol)
-else:
-    a_sigmas = np.linspace(0.6, 1, omresol)
-amlim = 1e13
-for n in range(len(ximins)):
-    #ax = axs[n // 2, n % 2]
-    i = ximins[n]
-    #l = ximaxs[len(ximins) - 1]
-    l = ximaxs[n]
-    xmax = dexis[l-1]
-    #xmax = max_fracs[len(ximins) - 1]
-
-    if save:
-        res = []
-        for m in range(omresol):
-            diff_nmerg = np.zeros(zresol)
-            if c_param == '\Omega_m':
-                omg = a_omegas[m]
-                s8 = 0.8
-            else:
-                s8 = a_sigmas[m]
-                omg = 0.3
-            for k in range(zresol):
-                diff_nmerg[k] = integ_mrate(3 * amlim, nreds[k], xi_min=dexis[i], xi_max=xmax, om0=omg, sig8=s8)
-            res.append(np.sum(diff_nmerg) * dz)
-        if c_param == '\Omega_m':
-            np.savetxt('anal_ntotmerg_zmin{}_zmax{:1.1f}_mlim{:2.1e}_ximin{:1.2f}'
-                       '_ximax{:1.2f}_omegas.txt'.format(zmin, zmax, amlim, dexis[i], xmax), np.array(res))
-        else:
-            np.savetxt('anal_ntotmerg_zmin{}_zmax{:1.1f}_mlim{:2.1e}_ximin{:1.2f}'
-                       '_ximax{:1.2f}_sigmas.txt'.format(zmin, zmax, amlim, dexis[i], xmax), np.array(res))
-
-    else:
-        if c_param == '\Omega_m':
-            res = np.loadtxt('anal_ntotmerg_zmin{}_zmax{:1.1f}_mlim{:2.1e}_ximin{:1.2f}_'
-                             'ximax{:1.2f}_omegas.txt'.format(zmin, zmax, amlim, dexis[i], xmax))
-        else:
-            res = np.loadtxt('anal_ntotmerg_zmin{}_zmax{:1.1f}_mlim{:2.1e}_'
-                             'ximin{:1.2f}_ximax{:1.2f}_sigmas.txt'.format(zmin, zmax, amlim, dexis[i], xmax))
-    if c_param == '\Omega_m':
-        plt.plot(a_omegas, res, color='C{}'.format(n), label=r'{:1.2f} $<\xi<$ {:1.2f}'.format(dexis[i], xmax))
-    else:
-        plt.plot(a_sigmas, res, color='C{}'.format(n), label=r'{:1.2f} $<\xi<$ {:1.2f}'.format(dexis[i], xmax))
-    if c_param == '\Omega_m':
-        plt.errorbar(np.array(omegas)[sim_selec1[:3]], sim_res[:3, i] - sim_res[:3, l-2], pois_res[:3, i], fmt='o',
-                    color='C{}'.format(n), label='MxSy'[:4 * (n == 0)])
-        plt.errorbar(np.array(omegas)[sim_selec1[-1]], sim_res[-1, i] - sim_res[-1, l-2], pois_res[-1, i], fmt='s',
-                    color='C{}'.format(n), label='Illustris'[:8 * (n == 0)])
-        # plt.errorbar(np.array(omegas)[sim_selec1[-2]], sim_res[-2, i] - sim_res[-2, l-2], pois_res[-2, i], fmt='s',
-        #             color='C{}'.format(n), label='BolshoiP'[:7 * (n == 0)])
-
-        plt.errorbar(np.array(omegas)[sim_selec1[3]], sim_res[3, i] - sim_res[3, l-2], pois_res[3, i], fmt='v',
-                    color='C{}'.format(n), label='New HR sims'[:10 * (n == 0)])
-    elif om1 == 0.3:
-        plt.errorbar(np.array(sigmas)[sim_selec2[:3]], sim_res[:3, i] - sim_res[:3, l-2], pois_res[:3, i], fmt='o',
-                    color='C{}'.format(n), label='MxSy'[:4 * (n == 0)])
-        plt.errorbar(np.array(sigmas)[sim_selec2[-1]], sim_res[-1, i] - sim_res[-1, l-2], pois_res[-1, i], fmt='s',
-                    color='C{}'.format(n), label='Illustris'[:9 * (n == 0)])
-        # plt.errorbar(np.array(omegas)[sim_selec1[-2]], sim_res[-2, i] - sim_res[-2, l-2], pois_res[-2, i], fmt='s',
-        #             color='C{}'.format(n), label='BolshoiP'[:7 * (n == 0)])
-        plt.errorbar(np.array(sigmas)[sim_selec2[3]], sim_res[3, i] - sim_res[3, l-2], pois_res[3, i], fmt='v',
-                    color='C{}'.format(n), label='New HR sim'[:10 * (n == 0)])
-
-plt.ylabel(r'dN(>$\xi$) [mergers/halo]')
-plt.xlabel(r'${}$'.format(c_param), size=15)
-plt.legend()
-plt.title(r'{}<z<{}, log $M/M_\odot$>{:2.1f}'.format(zmin, zmax, np.log10(amlim)), size=15)
-#plt.savefig(r'integ_N_tot_combined_${}$_m{:2.1f}.pdf'.format(c_param, np.log10(amlim)), dpi=650, bbox_inches='tight', facecolor='white',
-            #transparent=False)
-plt.show()
+# for snap in snaps:
+#     sim28b.make_prog_desc(snap)
 
 
-# fig, axs = plt.subplots(2, 2, figsize=[7, 7], dpi=500)
-#
-# for n in range(len(ximins)):
-#     ax = axs[n // 2, n % 2]
-#     i = ximins[n]
-#     for j in range(len(ys)):
-#         y = ys[j]
-#         ps = poisson[j]
-#         om = omegas[j]
-#         res = []
-#         for k in range(len(snapshots)):
-#             res.append(integ_mrate(3*mlim, m_reds[snapshots[k]], xi_min=dexis[i], xi_max=1, om0=om, sig8=s8))
-#         if j == 0 and n == 0:
-#             ax.plot(1 + m_reds[snapshots], res, color=colors[j], ls=lss[j], label=r'EC $\Omega_m$={:1.2f}'.format(om))
-#             ax.scatter(1 + m_reds[snapshots], y[i], color=colors[j], marker=markers[i],
-#                        label=r'$\xi>$ {:1.2f}, $\Omega_m$={:1.2f}'.format(dexis[i], om))
-#         elif j == 0:
-#             ax.scatter(1 + m_reds[snapshots], y[i], color=colors[j], marker=markers[j],
-#                        label=r'$\xi>$ {:1.2f}'.format(dexis[i]))
-#             ax.plot(1 + m_reds[snapshots], res, color=colors[j], ls=lss[j])
-#         elif n == 0:
-#             ax.plot(1 + m_reds[snapshots], res, color=colors[j], ls=lss[j], label=r'EC $\Omega_m$={:1.2f}'.format(om))
-#             ax.scatter(1 + m_reds[snapshots], y[i], color=colors[j], marker=markers[j],
-#                        label=r'$\Omega_m$={:1.2f}'.format(om))
-#         else:
-#             ax.scatter(1 + m_reds[snapshots], y[i], color=colors[j], marker=markers[j])
-#             ax.plot(1 + m_reds[snapshots], res, color=colors[j], ls=lss[j])
-#
-#         ax.fill_between(1 + m_reds[snapshots], y[i] - ps[i], y[i] + ps[i], color=colors[j], alpha=0.2)
-#
-#     ax.set_xlabel('1+z', size=15)
-#     ax.set_ylabel(r'dN(>$\xi$/dz [mergers/halo/dz]')
-#
-#     ax.legend()
-# plt.show()
+
