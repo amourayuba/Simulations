@@ -270,12 +270,12 @@ class Simulation:
 
 
 sim_names = ['M25S07', 'M25S08', 'M25S09', 'M03S07','M03S08', 'M03S09', 'M35S07', 'M35S08', 'M35S09',
-             'Illustris', 'bolshoiP', 'bolshoiW', 'm25s85', 'm2s8', 'm4s7', 'm4s8', 'm2s9', 'M03S08b',
-             'm3s8_50', 'm3s8', 'm35s75', 'm4s9', 'm3s9']
-omegas = [0.25, 0.25, 0.25, 0.3, 0.3, 0.3, 0.35, 0.35, 0.35, 0.309, 0.307, 0.27, 0.25, 0.2, 0.4, 0.4, 0.2, 0.3, 0.3
-          ,0.3, 0.35, 0.4, 0.3]
-sigmas = [0.7, 0.8, 0.9, 0.7, 0.8, 0.9, 0.7, 0.8, 0.9, 0.816, 0.82, 0.82, 0.85, 0.8, 0.7, 0.8, 0.9, 0.8, 0.8
-          ,0.8, 0.75, 0.9, 0.9]
+             'Illustris', 'bolshoiP', 'bolshoiW', 'M03S08b', 'm25s85', 'm2s8', 'm4s7', 'm4s8', 'm2s9',
+             'm3s8_50', 'm3s8', 'm35s75', 'm4s9', 'm3s9', 'm25s75']
+omegas = [0.25, 0.25, 0.25, 0.3, 0.3, 0.3, 0.35, 0.35, 0.35, 0.309, 0.307, 0.27, 0.3, 0.25, 0.2, 0.4, 0.4, 0.2,  0.3
+          ,0.3, 0.35, 0.4, 0.3, 0.25]
+sigmas = [0.7, 0.8, 0.9, 0.7, 0.8, 0.9, 0.7, 0.8, 0.9, 0.816, 0.82, 0.82, 0.8, 0.85, 0.8, 0.7, 0.8, 0.9, 0.8
+          ,0.8, 0.75, 0.9, 0.9, 0.75]
 mrate_path = '/home/painchess/asus_fedora/merger_rate'
 old_path = '/home/painchess/disq2/ahf-v1.0-101/'
 localpath = '/home/painchess/sims/'
@@ -303,12 +303,13 @@ illustris_path = '/home/painchess/mounted/TNG300-625/output'
 #     plt.loglog(ximeans,  y, 'o', color='C{}'.format(snap))
 #     plt.loglog(xis[1:-1], ell_mrate_per_n(5e13, red, xis, om0=omegas[s], sig8=sigmas[s]), color='C{}'.format(snap), linewidth=2)
 # plt.show()
-
-s = -3
-sim38 = Simulation(sim_names[s], omegas[s], sigmas[s], localpath)
-reds = sim38.get_redshifts()
-snaps = np.arange(1, 20, 4)
-sim38.plot_tests('conc', snaps, vol=500)
+# for i in range(1,11):
+#     s = -i
+#     sim38 = Simulation(sim_names[s], omegas[s], sigmas[s], localpath)
+#     reds = sim38.get_redshifts()
+#     snaps = np.arange(0, 24, 8)
+#     #sim38.plot_tests('conc', snaps, vol=500)
+#     sim38.plot_tests('hmf', snaps, vol=500)
 
 # for snap in snaps:
 #     sim28b.make_prog_desc(snap)
