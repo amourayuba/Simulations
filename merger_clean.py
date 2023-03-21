@@ -93,6 +93,122 @@ class Simulation:
         else:
             return np.loadtxt(self.path + '/redshifts/mxsy_reds.txt')[::-1]
 
+    def get_prefs(self):
+        """Gets the list of prefixes of each file for all available snapshots"""
+        with open(self.path + self.name + '/' + self.name + '_prefixes.txt') as file:
+            prefs = file.read().splitlines()  # Names of each snapshot prefix.
+        return prefs
+
+    def read_halos(self, snapshot=0):
+        """Read the halo file associated with this simulation and snapshot"""
+        prefs = self.get_prefs()
+        return pd.read_table(self.path + self.name + '/halos/' + prefs[snapshot] + '.AHF_halos', delim_whitespace=True,
+                             header=0)
+
+    def make_mah(self, save=False):
+        mahs, ids, emptyfiles = [], [], []
+        filenames = os.listdir(self.path + self.name + '/mahs')
+        filenames.sort()
+        for file in filenames:
+            if os.path.getsize(self.path + self.name + '/mahs/' + file) > 15000:  # check that file is has actual halos
+                mahs.append(np.loadtxt(self.path + self.name + '/mahs/' + file)[:, 4])
+                ids.append(np.loadtxt(self.path + self.name + '/mahs/' + file)[:, 1][0])
+            else:
+                print('file ' + file + ' is empty')
+                emptyfiles.append(file)
+        if save:
+            np.save(self.path + self.name + '/mahs_{}.npy'.format(self.name), np.array(mahs, dtype=object))
+            np.save(self.path + self.name + '/ids_{}.npy'.format(self.name), np.array(ids, dtype=int))
+        return mahs, ids, emptyfiles
+
+    def get_mah(self):
+        """Gets the Mass Accretion History in the form of an .npy file with Nhalos elements, each one being a list of
+        masses starting from z=0 """
+        return np.load(self.path + '/{}/mahs_{}.npy'.format(self.name, self.name), allow_pickle=True)
+
+    def get_mah_ids(self):
+        """Gets the associated halo ids of the Mass Accretion History in the form of an .npy file with Nhalos
+        elements, each one being a list of masses starting from z=0 """
+        return np.load(self.path + '/{}/ids_{}.npy'.format(self.name, self.name))
+
+    def average_growth(self, zf, mmin=1e12, mmax=1e14, mbins=20, zbins=20, save=False):
+        """Calculates the average growth over the last dynamical timescale of halos between mmin and mmax at zf"""
+        mahs = self.get_mah()
+        zs, dz = get_zlastdyn(zf, h=0.7, om=self.om0, zbins=zbins)
+        zi = np.max(zs)
+        reds = self.get_redshifts()
+        masses = np.logspace(np.log10(mmin), np.log10(mmax), mbins)
+        res_sim = np.zeros(mbins)
+        ntot_sim = np.zeros(mbins)
+        for j in range(len(mahs)):
+            mah = mahs[j]
+            zeds = reds[:len(mah)]
+            if zeds[-1] > zi:
+                zbin_min, zbin_max = np.min(np.where(zeds > zf)), np.min(
+                    np.where(zeds > zi))  # find the snapshot bin corresponding to zf
+                if mah[zbin_min] < masses[-1]:
+                    mbin = np.min(np.where(masses > mah[zbin_min]))
+                    if mah[zbin_min] > mah[zbin_max] and mah[zbin_min] / mah[zbin_max] < 5:
+                        res_sim[mbin] += mah[zbin_min] / mah[zbin_max] - 1
+                        ntot_sim[mbin] += 1
+        ps_sim = np.sqrt(res_sim * (1 + res_sim / ntot_sim))
+        if save:
+            np.savetxt(self.path + '/{}/mah_mergers/av_growth_sim_{:2.1f}_sim_{}_nbins{}'
+                       .format(self.name, zf, self.name, mbins), np.array(res_sim))
+            np.savetxt(self.path + '/{}/mah_mergers/av_growth_ntot_sim_{:2.1f}_sim_{}_nbins{}'
+                       .format(self.name, zf, self.name, mbins), np.array(ntot_sim))
+            np.savetxt(self.path + '/{}/mah_mergers/av_growth_ps_sim_{:2.1f}_sim_{}_nbins{}'
+                       .format(self.name, zf, self.name, mbins), np.array(ps_sim))
+        return res_sim, ntot_sim, ps_sim
+
+    def large_growth(self, zf, mmin=1e12, mmax=1e14, mbins=20, zbins=20, save=False):
+        """Calculates the fraction of halos at zf that had a major merger during the last dynamical timescale"""
+        mahs = self.get_mah()
+        zs, dz = get_zlastdyn(zf, h=0.7, om=self.om0, zbins=zbins)
+        zi = np.max(zs)
+        reds = self.get_redshifts()
+        masses = np.logspace(np.log10(mmin), np.log10(mmax), mbins)
+        res_sim = np.zeros(mbins)
+        ntot_sim = np.zeros(mbins)
+        for j in range(len(mahs)):
+            mah = mahs[j]
+            zeds = reds[:len(mah)]
+            if zeds[-1] > zi:
+                zbin_min, zbin_max = np.min(np.where(zeds > zf)), np.min(
+                    np.where(zeds > zi))  # find the snapshot bin corresponding to zf
+                if mah[zbin_min] < masses[-1]:
+                    mbin = np.min(np.where(masses > mah[zbin_min]))
+                    ntot_sim[mbin] += 1
+                    if 1.333 < mah[zbin_min] / mah[zbin_max] < 2:
+                        res_sim[mbin] += 1
+        ps_sim = np.sqrt(res_sim * (1 + res_sim / ntot_sim))
+        if save:
+            np.savetxt(self.path + '/{}/mah_mergers/large_growth_sim_{:2.1f}_sim_{}_nbins{}'
+                       .format(self.name, zf, self.name, mbins), np.array(res_sim))
+            np.savetxt(self.path + '/{}/mah_mergers/large_growth_ntot_sim_{:2.1f}_sim_{}_nbins{}'
+                       .format(self.name, zf, self.name, mbins), np.array(ntot_sim))
+            np.savetxt(self.path + '/{}/mah_mergers/large_growth_ps_sim_{:2.1f}_sim_{}_nbins{}'
+                       .format(self.name, zf, self.name, mbins), np.array(ps_sim))
+        return res_sim, ntot_sim, ps_sim
+
+    def load_large_growth(self, mbins, zf):
+        res_sim = np.loadtxt(self.path + '/{}/mah_mergers/large_growth_sim_{:2.1f}_sim_{}_nbins{}'
+                             .format(self.name, zf, self.name, mbins))
+        ntot_sim = np.loadtxt(self.path + '/{}/mah_mergers/large_growth_ntot_sim_{:2.1f}_sim_{}_nbins{}'
+                              .format(self.name, zf, self.name, mbins))
+        ps_sim = np.loadtxt(self.path + '/{}/mah_mergers/large_growth_ps_sim_{:2.1f}_sim_{}_nbins{}'
+                            .format(self.name, zf, self.name, mbins))
+        return res_sim, ntot_sim, ps_sim
+
+    def load_av_growth(self, mbins, zf):
+        res_sim = np.loadtxt(self.path + '/{}/mah_mergers/av_growth_sim_{:2.1f}_sim_{}_nbins{}'
+                             .format(self.name, zf, self.name, mbins))
+        ntot_sim = np.loadtxt(self.path + '/{}/mah_mergers/av_growth_ntot_sim_{:2.1f}_sim_{}_nbins{}'
+                              .format(self.name, zf, self.name, mbins))
+        ps_sim = np.loadtxt(self.path + '/{}/mah_mergers/av_growth_ps_sim_{:2.1f}_sim_{}_nbins{}'
+                            .format(self.name, zf, self.name, mbins))
+        return res_sim, ntot_sim, ps_sim
+
     def get_desc_prog(self, snap, wpos=False):
         """ Gets the descendant and progenitor masses if they are already saved"""
         mds = np.load(self.path + '/progs_desc/{}_desc_mass_snap{}.npy'.format(self.name, snap), allow_pickle=True)
@@ -102,6 +218,7 @@ class Simulation:
                                allow_pickle=True)  # Gets the prog positions if needed.
             return mds, mprg, prog_pos
         return mds, mprg
+
 
     def make_prog_desc(self, snapshot, usepos=False, save=True):
         """Makes a list of descendant masses and each corresponding prog mass"""
