@@ -110,6 +110,14 @@ class Simulation:
         prefs = self.get_prefs()
         return pd.read_table(self.path + self.name + '/halos/' + prefs[snapshot] + '.AHF_halos', delim_whitespace=True,
                              header=0)
+    def get_2dprop(self, property, snapshot=0):
+        props = {'Conc': 0, 'chi': 1, 'axis_ratio': 2, 'axis_angle': -3, 'mbp_offset': -2, 'com_offset': -1}
+        props2d = np.load(self.path + self.name + '/data/nprops2D_{}_snap{}.npy'.format(self.name, 118 - snapshot),
+                          allow_pickle=True)
+        prop_array = []
+        for el in props2d:
+            prop_array.append(el[props[property]])
+        return prop_array
 
     def get_subfrac(self, snapshot=0):
         """Gives the substructure fraction of all halos at the given snapshot
@@ -160,19 +168,19 @@ class Simulation:
                 # print('file '+file+' is empty and has size ',os.path.getsize(self.path+self.name+'/mahs/'+file)/1024,'Kb')
                 emptyfiles.append(file)
         if save:
-            np.save(self.path + self.name + '/mahs_{}.npy'.format(self.name), np.array(mahs, dtype=object))
-            np.save(self.path + self.name + '/ids_{}.npy'.format(self.name), np.array(ids, dtype=int))
+            np.save(self.path + self.name + '/data/mahs_{}.npy'.format(self.name), np.array(mahs, dtype=object))
+            np.save(self.path + self.name + '/data/ids_{}.npy'.format(self.name), np.array(ids, dtype=int))
         return mahs, ids, emptyfiles
 
     def get_mah(self):
         """Gets the Mass Accretion History in the form of an .npy file with Nhalos elements, each one being a list of
         masses starting from z=0 """
-        return np.load(self.path + '/{}/mahs_{}.npy'.format(self.name, self.name), allow_pickle=True)
+        return np.load(self.path + '/{}/data/mahs_{}.npy'.format(self.name, self.name), allow_pickle=True)
 
     def get_mah_ids(self):
         """Gets the associated halo ids of the Mass Accretion History in the form of an .npy file with Nhalos
         elements, each one being a list of masses starting from z=0 """
-        return np.load(self.path + '/{}/ids_{}.npy'.format(self.name, self.name))
+        return np.load(self.path + '/{}/data/ids_{}.npy'.format(self.name, self.name))
 
     ###########################---------------CALCULATIONS WITH MAHS-------------------#################################
 
@@ -261,14 +269,14 @@ class Simulation:
         otht = pd.DataFrame(tosave)
 
         if save:
-            zxt.to_csv(self.path + '/{}/zxt_{}_z{}.dat'.format(self.name, self.name, z))
-            zmmt.to_csv(self.path + '/{}/zmmt_{}_z{}.dat'.format(self.name, self.name, z))
-            mofzt.to_csv(self.path + '/{}/mofzt_{}_z{}.dat'.format(self.name, self.name, z))
-            otht.to_csv(self.path + '/{}/otht_{}_z{}.dat'.format(self.name, self.name, z))
+            zxt.to_csv(self.path + '/{}/data/zxt_{}_z{}.dat'.format(self.name, self.name, z))
+            zmmt.to_csv(self.path + '/{}/data/zmmt_{}_z{}.dat'.format(self.name, self.name, z))
+            mofzt.to_csv(self.path + '/{}/data/mofzt_{}_z{}.dat'.format(self.name, self.name, z))
+            otht.to_csv(self.path + '/{}/data/otht_{}_z{}.dat'.format(self.name, self.name, z))
         return zxt, zmmt, mofzt, otht
 
     def get_agedata(self, z, atype='oth'):
-        return pd.read_csv(self.path + '/{}/{}t_{}_z{}.dat'.format(self.name, atype, self.name, z))
+        return pd.read_csv(self.path + '/{}/data/{}t_{}_z{}.dat'.format(self.name, atype, self.name, z))
 
     def average_growth(self, zf, mmin=1e12, mmax=1e14, mbins=20, zbins=20, save=False):
         """Calculates the average growth over the last dynamical timescale of halos between mmin and mmax at zf"""
