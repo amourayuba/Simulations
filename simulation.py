@@ -5,14 +5,7 @@ from astropy import units as u
 import os
 import pandas as pd
 import matplotlib.pyplot as plt
-import matplotlib as mpl
 import csv
-
-params = {'legend.fontsize': 7,
-          'legend.handlelength': 2}
-mpl.rcParams['figure.dpi'] = 150
-mpl.rcParams['font.family'] = 'serif'
-plt.rcParams.update(params)
 
 
 ################ TOTAL NUMBER OF MERGERS ################################################
@@ -76,12 +69,11 @@ def get_zlastdyn(zf, h, om, zbins=20):
     zi = z_at_value(cosmol.age, last_tdyn * u.Gyr)
     zs = np.linspace(zi, zf, zbins)
     dz = (zi - zf) / zbins
-    return zs.value, dz.value
+    return zs, dz
 
 
 class Simulation:
     """A class of objects referring to a Dark Matter only simulation"""
-
     def __init__(self, name, om0, sig8, path):
         self.name = name  # name of the simulation
         self.om0 = om0  # Value of Omega_m for the simulation
@@ -157,15 +149,12 @@ class Simulation:
         for file in filenames:
             if os.path.getsize(
                     self.path + self.name + '/mahs/' + file) > fsizelim:  # check that file is has actual halos
-                #mahs.append(np.loadtxt(self.path + self.name + '/mahs/' + file)[:, 4])
-                #ids.append(np.loadtxt(self.path + self.name + '/mahs/' + file)[:, 1][0])
                 mahs.append(np.loadtxt(self.path + self.name + '/mahs/' + file)[:, 4])
                 with open(self.path + self.name + '/mahs/' + file, 'r') as f:
                     for _ in range(3):
                         l = f.readline()
                     ids.append((int(l.split()[1])))
             else:
-                # print('file '+file+' is empty and has size ',os.path.getsize(self.path+self.name+'/mahs/'+file)/1024,'Kb')
                 emptyfiles.append(file)
         if save:
             np.save(self.path + self.name + '/data/mahs_{}.npy'.format(self.name), np.array(mahs, dtype=object))
@@ -380,8 +369,6 @@ class Simulation:
         desc_mass = np.array(d_halos['Mhalo(4)'])  # halo masses at snap
         prog_mass = np.array(p_halos['Mhalo(4)'])  # halo masses at snap+1
 
-        # desc_mass = np.loadtxt(f_halos + prefs[snapshot] + '.AHF_halos')[:, 3]
-        # prog_mass = np.loadtxt(f_halos + prefs[snapshot + 1] + '.AHF_halos')[:, 3]
         id4_desc = np.loadtxt(f_halos + prefs[snapshot] + '.AHF_halos')[4, 0]  # random halo id at snap
         id4_prog = np.loadtxt(f_halos + prefs[snapshot + 1] + '.AHF_halos')[4, 0]  # random halo id at snap+1
 
@@ -396,7 +383,6 @@ class Simulation:
             Xcs, Ycs, Zcs = np.loadtxt(f_halos + prefs[snapshot + 1] + '.AHF_halos')[:, 5], np.loadtxt(
                 f_halos + prefs[snapshot + 1] + '_halos')[:, 6], np.loadtxt(f_halos + prefs[snapshot + 1] + '_halos')[:,
                                                                  7]
-        mmin = np.min(desc_mass)
         desc, progs = [], []
         with open(f_mtrees + prefs[snapshot] + '.AHF_mtree') as file:
             lines = csv.reader(file, delimiter=' ', skipinitialspace=True)
@@ -453,15 +439,6 @@ class Simulation:
         for i in range(len(mds)):
             mass = mds[i]
             if mlim < mass < 1000 * mlim:
-                # if len(mprg[i]) > 0:
-                #     pgmasses = np.array(mprg[i])
-                #     if wpos:
-                #         pos_s = np.array(prog_pos[i])
-                #         if len(mprg[i]) == 1:
-                #             tnds += np.max(pgmasses) * xis > mmin
-                #     else:
-                #         tnds += np.max(pgmasses) * xis > mmin
-
                 tnds += xis > mmin / (mass - mmin)
                 if len(mprg[i]) > 1:
                     pgmasses = np.array(mprg[i])
@@ -495,16 +472,6 @@ class Simulation:
             mmin = np.min(mds)
             for i in range(len(mds)):
                 if mlim < mds[i] < mlim_rat * mlim:
-                    # if len(mprg[i]) > 0:
-                    #     pgmasses = mprg[i]
-                    #     xilim = mmin / np.max(pgmasses)
-                    #     if wpos:
-                    #         pos_s = np.array(prog_pos[i])
-                    #         if len(mprg[i]) == 1:
-                    #             tnds[:, k] += xilim < dexis
-                    #     else:
-                    #         tnds[:, k] += xilim < dexis
-
                     xilim = 1 / (mds[i] / mmin - 1)
                     # print(xilim)
                     tnds[:, k] += xilim < dexis

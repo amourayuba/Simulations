@@ -1,10 +1,6 @@
-from merger_clean import *
+from simulation import *
 import matplotlib.pyplot as plt
 import matplotlib as mpl
-#import matplotlib.gridspec as gridspec
-#from matplotlib import ticker
-#import time
-#from numba import jit
 params = {'legend.fontsize': 8,
           'legend.handlelength': 2}
 mpl.rcParams['figure.dpi'] = 150

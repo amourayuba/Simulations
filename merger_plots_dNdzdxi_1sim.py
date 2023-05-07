@@ -1,16 +1,23 @@
-from merger_clean import *
+from simulation import *
 import matplotlib.pyplot as plt
 import matplotlib as mpl
-from matplotlib import ticker
-import time
 
-# from numba import jit
 params = {'legend.fontsize': 7,
           'legend.handlelength': 2}
 mpl.rcParams['figure.dpi'] = 150
 mpl.rcParams['font.family'] = 'serif'
 plt.rcParams.update(params)
 
+sim_names = ['M25S07', 'M25S08', 'M25S09', 'M03S07','M03S08', 'M03S09', 'M35S07', 'M35S08', 'M35S09',
+                 'Illustris', 'bolshoiP', 'bolshoiW', 'M03S08b', 'm25s85', 'm2s8', 'm4s7', 'm4s8', 'm2s9',
+                 'm3s8_50', 'm3s8', 'm35s75', 'm4s9', 'm3s9', 'm25s75', 'm2s1', 'm3s7', 'm3s85', 'm2s7', 'm25s8',
+                 'm35s8', 'm25s9', 'm35s85', 'm3s75', 'm35s9', 'm35s7']
+omegas = [0.25, 0.25, 0.25, 0.3, 0.3, 0.3, 0.35, 0.35, 0.35, 0.309, 0.307, 0.27, 0.3, 0.25, 0.2, 0.4, 0.4, 0.2,  0.3
+              ,0.3, 0.35, 0.4, 0.3, 0.25, 0.2, 0.3, 0.3, 0.2, 0.25, 0.35, 0.25, 0.35, 0.3, 0.35, 0.35]
+sigmas = [0.7, 0.8, 0.9, 0.7, 0.8, 0.9, 0.7, 0.8, 0.9, 0.816, 0.82, 0.82, 0.8, 0.85, 0.8, 0.7, 0.8, 0.9, 0.8
+              ,0.8, 0.75, 0.9, 0.9, 0.75, 1.0, 0.7, 0.85, 0.7, 0.8, 0.8, 0.9, 0.85, 0.75, 0.9, 0.7]
+
+sims = dict(zip(sim_names, list(zip(omegas, sigmas))))
 sim = 'M35S09'
 # sim2 = 'm2s8b'
 
