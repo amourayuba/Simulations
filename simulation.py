@@ -1,4 +1,8 @@
+import sys
+sys.path.append('/home/painchess/projects_clean/Halo_Analytical_Calculations')
+from astropy.table import Table
 from merger_rate import *
+
 from scipy.optimize import curve_fit
 from astropy.cosmology import LambdaCDM, z_at_value
 from astropy import units as u
@@ -74,12 +78,14 @@ def get_zlastdyn(zf, h, om, zbins=20):
 
 class Simulation:
     """A class of objects referring to a Dark Matter only simulation"""
+
     def __init__(self, name, om0, sig8, path):
         self.name = name  # name of the simulation
         self.om0 = om0  # Value of Omega_m for the simulation
         self.sig8 = sig8  # Value of sigma_8
         self.path = path  # The base (absolute) path of that simulation. All simulation paths have to be structured the same.
         self.simpath = self.path + self.name
+
     #################----------------GENERIC INFORMATION OF THE SIMULATION---------------------#########################
 
     def get_redshifts(self):
@@ -102,14 +108,65 @@ class Simulation:
         prefs = self.get_prefs()
         return pd.read_table(self.path + self.name + '/halos/' + prefs[snapshot] + '.AHF_halos', delim_whitespace=True,
                              header=0)
-    def get_2dprop(self, property, snapshot=0):
-        props = {'Conc': 0, 'chi': 1, 'axis_ratio': 2, 'axis_angle': -3, 'mbp_offset': -2, 'com_offset': -1}
+
+    def get_2dprop(self, prop, snapshot=0):
+        props = {'Conc': 0, r'$\chi^2_M$': 1, r'$\chi^2_\rho$': 2, 'axis_ratio': 3, 'axis_angle': -3, 'mbp_offset': -2, 'com_offset': -1}
         props2d = np.load(self.path + self.name + '/data/nprops2D_{}_snap{}.npy'.format(self.name, 118 - snapshot),
                           allow_pickle=True)
         prop_array = []
         for el in props2d:
-            prop_array.append(el[props[property]])
+            prop_array.append(el[props[prop]])
         return prop_array
+
+    def get_3dprop(self, prop, snapshot=0):
+        props = {'Conc': 0, r'$\chi^2_M$': 1, r'$\chi^2_\rho$': 2}
+        props2d = np.load(self.path + self.name + '/data/nprops3D_{}_snap{}.npy'.format(self.name, 118 - snapshot),
+                          allow_pickle=True)
+        prop_array = []
+        for el in props2d:
+            prop_array.append(el[props[prop]])
+        return prop_array
+
+    def make_structure_data(self, mmin, mmax, propage='z50', ztype='zx', snap=0, maxval=50, save=True):
+        reds = self.get_redshifts()
+        agedata = self.get_agedata(z=reds[snap], atype=ztype)
+        mass_indx = self.get_agedata(z=reds[snap], atype='oth')
+
+        props2d = np.load(self.path + self.name + '/data/nprops2D_{}_snap{}.npy'.format(self.name, 118 - snap), allow_pickle=True)
+        props3d = np.load(self.path + self.name + '/data/nprops3D_{}_snap{}.npy'.format(self.name, 118 - snap), allow_pickle=True)
+
+        halids = np.array(self.read_halos(snapshot=snap)['#ID(1)'], dtype=int)
+        idkeys = dict(zip(halids, np.arange(len(halids))))
+        del halids
+
+        cl_data = agedata[agedata[propage] < maxval].reset_index(drop=True)
+        clm_indx = mass_indx[agedata[propage] < maxval].reset_index(drop=True)
+        del agedata, mass_indx
+        
+        comb_data2d, comb_data3d = [], []
+        for i in range(len(cl_data)):
+            if mmin < clm_indx.loc[i]['Mass'] < mmax:
+                hid = clm_indx['Halo_index'].loc[i]
+                halidx = idkeys[hid]
+                comb_data3d.append([halidx, cl_data.loc[i][propage], props3d[halidx][0],
+                                   props3d[halidx][1][0], props3d[halidx][1][1], props3d[halidx][2][0],
+                                   props3d[halidx][2][1]])
+                comb_data2d.append([halidx, cl_data.loc[i][propage], props2d[halidx][0],
+                                   props2d[halidx][1][0], props2d[halidx][1][1], props2d[halidx][2][0],
+                                   props2d[halidx][2][1], props2d[halidx][3], props2d[halidx][5], props2d[halidx][6]])
+        data3d = Table(np.array(comb_data3d),
+                       names=['Halo_index', propage, 'Conc', r'$\chi^2_\rho$', 'log_Chi_rho', r'$\chi^2_M$', 'log_Chi_M'])
+        data2d = Table(np.array(comb_data2d),
+                       names=['Halo_index', propage, 'Conc', r'$\chi^2_\rho$', 'log_Chi_rho', r'$\chi^2_M$', 'log_Chi_M',
+                              'axis_ratio', 'mbp_off', 'com_off'])
+        if save:
+            ascii.write(data3d, self.path + self.name + '/data/{}_{}_dat3d_{:1.2e}.dat'.format(propage, self.name, mmin),
+                        overwrite=True)
+            ascii.write(data2d, self.path + self.name + '/data/{}_{}_dat2d_{:1.2e}.dat'.format(propage, self.name, mmax),
+                        overwrite=True)
+            return data3d, data2d
+        else:
+            return data3d, data2d
 
     def get_subfrac(self, snapshot=0):
         """Gives the substructure fraction of all halos at the given snapshot
@@ -169,7 +226,13 @@ class Simulation:
     def get_mah_ids(self):
         """Gets the associated halo ids of the Mass Accretion History in the form of an .npy file with Nhalos
         elements, each one being a list of masses starting from z=0 """
-        return np.load(self.path + '/{}/data/ids_{}.npy'.format(self.name, self.name))
+        if os.path.exists(self.path + '/{}/data/ids_{}.npy'.format(self.name, self.name)):
+            return np.load(self.path + '/{}/data/ids_{}.npy'.format(self.name, self.name))
+        else:
+            #if Ids file don't exist, assign them increasing ids
+            mahs = self.get_mah()
+            return np.arange(len(mahs))
+
 
     ###########################---------------CALCULATIONS WITH MAHS-------------------#################################
 
@@ -214,7 +277,7 @@ class Simulation:
                     frc = jump_frac[p] / 100
                     jump_idx = np.where(immfracs >= frc)[0]
                     if len(jump_idx) > 0:
-                        res = np.sqrt(zeds[np.min(jump_idx)]*zeds[np.min(jump_idx)+minsnapdist])
+                        res = np.sqrt(zeds[np.min(jump_idx)] * zeds[np.min(jump_idx) + minsnapdist])
                         zmm_i[jump_frac[p]].append(res)
                     else:
                         zmm_i[jump_frac[p]].append(123)
@@ -239,7 +302,8 @@ class Simulation:
                 mass_i.append(m)
                 indices_i.append(idxs[i])
 
-        mass_i, indices_i, gamma, beta = np.array(mass_i), np.array(indices_i, dtype=int), np.array(gamma), np.array(beta)
+        mass_i, indices_i, gamma, beta = np.array(mass_i), np.array(indices_i, dtype=int), np.array(gamma), np.array(
+            beta)
 
         nameszx = ['z{}'.format(frac) for frac in fracs]
         nameszmm = ['zmm{}'.format(jfrac) for jfrac in jump_frac]
@@ -565,20 +629,19 @@ class Simulation:
                 plt.show()
 
 
-
 if __name__ == "__main__":
     ##############---------------- Getting the merger rates from sims -----####################
 
-    sim_names = ['M25S07', 'M25S08', 'M25S09', 'M03S07','M03S08', 'M03S09', 'M35S07', 'M35S08', 'M35S09',
+    sim_names = ['M25S07', 'M25S08', 'M25S09', 'M03S07', 'M03S08', 'M03S09', 'M35S07', 'M35S08', 'M35S09',
                  'Illustris', 'bolshoiP', 'bolshoiW', 'M03S08b', 'm25s85', 'm2s8', 'm4s7', 'm4s8', 'm2s9',
                  'm3s8_50', 'm3s8', 'm35s75', 'm4s9', 'm3s9', 'm25s75', 'm2s1', 'm3s7', 'm3s85', 'm2s7', 'm25s8',
                  'm35s8', 'm25s9', 'm35s85', 'm3s75', 'm35s9', 'm35s7']
-    omegas = [0.25, 0.25, 0.25, 0.3, 0.3, 0.3, 0.35, 0.35, 0.35, 0.309, 0.307, 0.27, 0.3, 0.25, 0.2, 0.4, 0.4, 0.2,  0.3
-              ,0.3, 0.35, 0.4, 0.3, 0.25, 0.2, 0.3, 0.3, 0.2, 0.25, 0.35, 0.25, 0.35, 0.3, 0.35, 0.35]
+    omegas = [0.25, 0.25, 0.25, 0.3, 0.3, 0.3, 0.35, 0.35, 0.35, 0.309, 0.307, 0.27, 0.3, 0.25, 0.2, 0.4, 0.4, 0.2, 0.3
+        , 0.3, 0.35, 0.4, 0.3, 0.25, 0.2, 0.3, 0.3, 0.2, 0.25, 0.35, 0.25, 0.35, 0.3, 0.35, 0.35]
     sigmas = [0.7, 0.8, 0.9, 0.7, 0.8, 0.9, 0.7, 0.8, 0.9, 0.816, 0.82, 0.82, 0.8, 0.85, 0.8, 0.7, 0.8, 0.9, 0.8
-              ,0.8, 0.75, 0.9, 0.9, 0.75, 1.0, 0.7, 0.85, 0.7, 0.8, 0.8, 0.9, 0.85, 0.75, 0.9, 0.7]
+        , 0.8, 0.75, 0.9, 0.9, 0.75, 1.0, 0.7, 0.85, 0.7, 0.8, 0.8, 0.9, 0.85, 0.75, 0.9, 0.7]
 
-    # sims = dict(zip(sim_names, list(zip(omegas, sigmas))))
+    sims = dict(zip(sim_names, list(zip(omegas, sigmas))))
     #
     # mrate_path = '/home/painchess/asus_fedora/merger_rate'
     # old_path = '/home/painchess/disq2/ahf-v1.0-101/'

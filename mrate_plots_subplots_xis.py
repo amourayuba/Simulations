@@ -7,6 +7,23 @@ mpl.rcParams['figure.dpi'] = 150
 mpl.rcParams['font.family'] = 'serif'
 plt.rcParams.update(params)
 
+sim_names = ['M25S07', 'M25S08', 'M25S09', 'M03S07', 'M03S08', 'M03S09', 'M35S07', 'M35S08', 'M35S09',
+                 'Illustris', 'bolshoiP', 'bolshoiW', 'M03S08b', 'm25s85', 'm2s8', 'm4s7', 'm4s8', 'm2s9',
+                 'm3s8_50', 'm3s8', 'm35s75', 'm4s9', 'm3s9', 'm25s75', 'm2s1', 'm3s7', 'm3s85', 'm2s7', 'm25s8',
+                 'm35s8', 'm25s9', 'm35s85', 'm3s75', 'm35s9', 'm35s7']
+omegas = [0.25, 0.25, 0.25, 0.3, 0.3, 0.3, 0.35, 0.35, 0.35, 0.309, 0.307, 0.27, 0.3, 0.25, 0.2, 0.4, 0.4, 0.2, 0.3
+    , 0.3, 0.35, 0.4, 0.3, 0.25, 0.2, 0.3, 0.3, 0.2, 0.25, 0.35, 0.25, 0.35, 0.3, 0.35, 0.35]
+sigmas = [0.7, 0.8, 0.9, 0.7, 0.8, 0.9, 0.7, 0.8, 0.9, 0.816, 0.82, 0.82, 0.8, 0.85, 0.8, 0.7, 0.8, 0.9, 0.8
+    , 0.8, 0.75, 0.9, 0.9, 0.75, 1.0, 0.7, 0.85, 0.7, 0.8, 0.8, 0.9, 0.85, 0.75, 0.9, 0.7]
+
+sims = dict(zip(sim_names, list(zip(omegas, sigmas))))
+
+mrate_path = '/home/painchess/asus_fedora/merger_rate'
+old_path = '/home/painchess/disq2/ahf-v1.0-101/'
+localpath = '/home/painchess/sims/'
+externalpath = '/home/painchess/mounted/HR_sims/niagara/'
+illustris_path = '/home/painchess/mounted/TNG300-625/output'
+
 
 resol, ximin, ximax = 100, 1e-2, 1
 
@@ -25,7 +42,7 @@ sim_selec2 = np.array([6, 7, 8])
 sim_selec3 = np.array([0, -1, -2, -4])
 zmin, zmax = 0.01, 0.45
 sim_res, pois_res = np.zeros((len(sim_selec1s[0]), resol - 1)), np.zeros((len(sim_selec1s[0]), resol - 1))
-c_param = '\Omega_m'
+c_param = '\sigma_8'
 
 fig, axs = plt.subplots(1, 3, figsize=[17, 6], sharey=True)
 
@@ -78,7 +95,7 @@ for p in range(3):
         a_omegas = np.linspace(0.15, 0.45, omresol)
     else:
         a_sigmas = np.linspace(0.6, 1, omresol)
-    amlim = 2e13
+    amlim = 1e13
     for n in range(len(ximins)):
         # ax = axs[n // 2, n % 2]
 
@@ -144,8 +161,8 @@ for p in range(3):
                         color='C{}'.format(n), label='New HR sim'[:10 * (n == 0)])
 
     if p==0:
-        axs[p].set_ylabel(r'dN(>$\xi$) [mergers/halo]', size=22)
-        axs[p].legend(fontsize=12.5)
+        axs[p].set_ylabel(r'dN($\xi_{min}$<$\xi$<$\xi_{max}$) [mergers/halo]', size=19)
+        axs[p].legend(fontsize=10)
     axs[p].set_xlabel(r'${}$'.format(c_param), size=35)
     if p==1 and c_param=='\Omega_m':
         axs[p].set_title(r'{}<z<{}, log $M/M_\odot$>{:2.1f}'.format(zmin, zmax, np.log10(amlim)), size=25)
