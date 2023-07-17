@@ -78,7 +78,6 @@ def get_zlastdyn(zf, h, om, zbins=20):
 
 class Simulation:
     """A class of objects referring to a Dark Matter only simulation"""
-
     def __init__(self, name, om0, sig8, path):
         self.name = name  # name of the simulation
         self.om0 = om0  # Value of Omega_m for the simulation
