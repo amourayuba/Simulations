@@ -1,8 +1,8 @@
 import sys
 sys.path.append('/home/painchess/projects_clean/Halo_Analytical_Calculations')
+import merger_rate as mr
+import cosmo_parameters as cp
 from astropy.table import Table
-from merger_rate import *
-
 from scipy.optimize import curve_fit
 from astropy.cosmology import LambdaCDM, z_at_value
 from astropy import units as u
@@ -38,13 +38,13 @@ def large_growth_analytical(Mass, zs, s8, om, nxibins=10000):
         for M0 in Mass:
             res = []
             for red in zs:
-                res.append(integ_mrate(M0, red, 1 / 3, 1, nxibins=nxibins, mass=False, sig8=s8, om0=om, ol0=1 - om))
+                res.append(mr.integ_mrate(M0, red, 1 / 3, 1, nxibins=nxibins, mass=False, sig8=s8, om0=om, ol0=1 - om))
             res_ana.append(np.sum(np.array(res)) * dz)
         return np.array(res_ana)
     else:
         res = []
         for red in zs:
-            res.append(integ_mrate(Mass, red, 1 / 3, 1, nxibins=nxibins, mass=False, sig8=s8, om0=om, ol0=1 - om))
+            res.append(mr.integ_mrate(Mass, red, 1 / 3, 1, nxibins=nxibins, mass=False, sig8=s8, om0=om, ol0=1 - om))
         return np.sum(np.array(res)) * dz
 
 
@@ -55,22 +55,22 @@ def average_growth_analytical(Mass, zs, s8, om, nxibins=10000):
         for M0 in Mass:
             res = []
             for red in zs:
-                res.append(integ_mrate(M0, red, 1e-14, 1, nxibins=nxibins, mass=True, sig8=s8, om0=om, ol0=1 - om) / M0)
+                res.append(mr.integ_mrate(M0, red, 1e-14, 1, nxibins=nxibins, mass=True, sig8=s8, om0=om, ol0=1 - om) / M0)
             res_ana.append(np.sum(np.array(res)) * dz)
         return np.array(res_ana)
     else:
         res = []
         for red in zs:
-            res.append(integ_mrate(Mass, red, 1e-14, 1, nxibins=nxibins, mass=True, sig8=s8, om0=om, ol0=1 - om) / Mass)
+            res.append(mr.integ_mrate(Mass, red, 1e-14, 1, nxibins=nxibins, mass=True, sig8=s8, om0=om, ol0=1 - om) / Mass)
         return np.sum(np.array(res)) * dz
 
 
 def get_zlastdyn(zf, h, om, zbins=20):
     cosmol = LambdaCDM(H0=100 * h, Om0=om, Ode0=1 - om)
-    infall = 1.44 / hubble_ratio(zf, omega_m0=om, omega_l0=1 - om)  # infall time in gyr
+    infall = 1.44 / cp.hubble_ratio(zf, omega_m0=om, omega_l0=1 - om)  # infall time in gyr
     ages = cosmol.age(zf).value
     last_tdyn = ages - np.sqrt(2) * infall
-    zi = z_at_value(cosmol.age, last_tdyn * u.Gyr)
+    zi = z_at_value(cosmol.age, last_tdyn * u.Gyr).value
     zs = np.linspace(zi, zf, zbins)
     dz = (zi - zf) / zbins
     return zs, dz
@@ -78,6 +78,7 @@ def get_zlastdyn(zf, h, om, zbins=20):
 
 class Simulation:
     """A class of objects referring to a Dark Matter only simulation"""
+
     def __init__(self, name, om0, sig8, path):
         self.name = name  # name of the simulation
         self.om0 = om0  # Value of Omega_m for the simulation
@@ -109,7 +110,8 @@ class Simulation:
                              header=0)
 
     def get_2dprop(self, prop, snapshot=0):
-        props = {'Conc': 0, r'$\chi^2_M$': 1, r'$\chi^2_\rho$': 2, 'axis_ratio': 3, 'axis_angle': -3, 'mbp_offset': -2, 'com_offset': -1}
+        props = {'Conc': 0, r'$\chi^2_M$': 1, r'$\chi^2_\rho$': 2, 'axis_ratio': 3, 'axis_angle': -3, 'mbp_offset': -2,
+                 'com_offset': -1}
         props2d = np.load(self.path + self.name + '/data/nprops2D_{}_snap{}.npy'.format(self.name, 118 - snapshot),
                           allow_pickle=True)
         prop_array = []
@@ -131,8 +133,10 @@ class Simulation:
         agedata = self.get_agedata(z=reds[snap], atype=ztype)
         mass_indx = self.get_agedata(z=reds[snap], atype='oth')
 
-        props2d = np.load(self.path + self.name + '/data/nprops2D_{}_snap{}.npy'.format(self.name, 118 - snap), allow_pickle=True)
-        props3d = np.load(self.path + self.name + '/data/nprops3D_{}_snap{}.npy'.format(self.name, 118 - snap), allow_pickle=True)
+        props2d = np.load(self.path + self.name + '/data/nprops2D_{}_snap{}.npy'.format(self.name, 118 - snap),
+                          allow_pickle=True)
+        props3d = np.load(self.path + self.name + '/data/nprops3D_{}_snap{}.npy'.format(self.name, 118 - snap),
+                          allow_pickle=True)
 
         halids = np.array(self.read_halos(snapshot=snap)['#ID(1)'], dtype=int)
         idkeys = dict(zip(halids, np.arange(len(halids))))
@@ -141,27 +145,31 @@ class Simulation:
         cl_data = agedata[agedata[propage] < maxval].reset_index(drop=True)
         clm_indx = mass_indx[agedata[propage] < maxval].reset_index(drop=True)
         del agedata, mass_indx
-        
+
         comb_data2d, comb_data3d = [], []
         for i in range(len(cl_data)):
             if mmin < clm_indx.loc[i]['Mass'] < mmax:
                 hid = clm_indx['Halo_index'].loc[i]
                 halidx = idkeys[hid]
                 comb_data3d.append([halidx, cl_data.loc[i][propage], props3d[halidx][0],
-                                   props3d[halidx][1][0], props3d[halidx][1][1], props3d[halidx][2][0],
-                                   props3d[halidx][2][1]])
+                                    props3d[halidx][1][0], props3d[halidx][1][1], props3d[halidx][2][0],
+                                    props3d[halidx][2][1]])
                 comb_data2d.append([halidx, cl_data.loc[i][propage], props2d[halidx][0],
-                                   props2d[halidx][1][0], props2d[halidx][1][1], props2d[halidx][2][0],
-                                   props2d[halidx][2][1], props2d[halidx][3], props2d[halidx][5], props2d[halidx][6]])
+                                    props2d[halidx][1][0], props2d[halidx][1][1], props2d[halidx][2][0],
+                                    props2d[halidx][2][1], props2d[halidx][3], props2d[halidx][5], props2d[halidx][6]])
         data3d = Table(np.array(comb_data3d),
-                       names=['Halo_index', propage, 'Conc', r'$\chi^2_\rho$', 'log_Chi_rho', r'$\chi^2_M$', 'log_Chi_M'])
+                       names=['Halo_index', propage, 'Conc', r'$\chi^2_\rho$', 'log_Chi_rho', r'$\chi^2_M$',
+                              'log_Chi_M'])
         data2d = Table(np.array(comb_data2d),
-                       names=['Halo_index', propage, 'Conc', r'$\chi^2_\rho$', 'log_Chi_rho', r'$\chi^2_M$', 'log_Chi_M',
+                       names=['Halo_index', propage, 'Conc', r'$\chi^2_\rho$', 'log_Chi_rho', r'$\chi^2_M$',
+                              'log_Chi_M',
                               'axis_ratio', 'mbp_off', 'com_off'])
         if save:
-            ascii.write(data3d, self.path + self.name + '/data/{}_{}_dat3d_{:1.2e}.dat'.format(propage, self.name, mmin),
+            ascii.write(data3d,
+                        self.path + self.name + '/data/{}_{}_dat3d_{:1.2e}.dat'.format(propage, self.name, mmin),
                         overwrite=True)
-            ascii.write(data2d, self.path + self.name + '/data/{}_{}_dat2d_{:1.2e}.dat'.format(propage, self.name, mmax),
+            ascii.write(data2d,
+                        self.path + self.name + '/data/{}_{}_dat2d_{:1.2e}.dat'.format(propage, self.name, mmax),
                         overwrite=True)
             return data3d, data2d
         else:
@@ -228,15 +236,14 @@ class Simulation:
         if os.path.exists(self.path + '/{}/data/ids_{}.npy'.format(self.name, self.name)):
             return np.load(self.path + '/{}/data/ids_{}.npy'.format(self.name, self.name))
         else:
-            #if Ids file don't exist, assign them increasing ids
+            # if Ids file don't exist, assign them increasing ids
             mahs = self.get_mah()
             return np.arange(len(mahs))
 
-
     ###########################---------------CALCULATIONS WITH MAHS-------------------#################################
 
-    def make_zxs(self, z, save=True, minsnapdist=5, jump_frac=[30, 25, 20, 10], snapnums=[11, 27, 59, 79, 89],
-                 fracs=[90, 75, 50, 10, 1]):
+    def make_zxs(self, z, save=True, minsnapdist=5, jump_frac=(30, 25, 20, 10), snapnums=(11, 27, 59, 79, 89),
+                 fracs=(90, 75, 50, 10, 1)):
 
         mahs = self.get_mah()
         idxs = self.get_mah_ids()
@@ -330,7 +337,7 @@ class Simulation:
     def get_agedata(self, z, atype='oth'):
         return pd.read_csv(self.path + '/{}/data/{}t_{}_z{}.dat'.format(self.name, atype, self.name, z))
 
-    def average_growth(self, zf, mmin=1e12, mmax=1e14, mbins=20, zbins=20, save=False):
+    def average_growth(self, zf, mmin=1e12, mmax=1e14, mbins=20, zbins=20, save=False, subsample=1):
         """Calculates the average growth over the last dynamical timescale of halos between mmin and mmax at zf"""
         mahs = self.get_mah()
         zs, dz = get_zlastdyn(zf, h=0.7, om=self.om0, zbins=zbins)
@@ -340,16 +347,17 @@ class Simulation:
         res_sim = np.zeros(mbins)
         ntot_sim = np.zeros(mbins)
         for j in range(len(mahs)):
-            mah = mahs[j]
-            zeds = reds[:len(mah)]
-            if zeds[-1] > zi:
-                zbin_min, zbin_max = np.min(np.where(zeds > zf)), np.min(
-                    np.where(zeds > zi))  # find the snapshot bin corresponding to zf
-                if mah[zbin_min] < masses[-1]:
-                    mbin = np.min(np.where(masses > mah[zbin_min]))
-                    if mah[zbin_min] > mah[zbin_max] and mah[zbin_min] / mah[zbin_max] < 5:
-                        res_sim[mbin] += mah[zbin_min] / mah[zbin_max] - 1
-                        ntot_sim[mbin] += 1
+            if np.random.random() < subsample:
+                mah = mahs[j]
+                zeds = reds[:len(mah)]
+                if zeds[-1] > zi:
+                    zbin_min, zbin_max = np.min(np.where(zeds > zf)), np.min(
+                        np.where(zeds > zi))  # find the snapshot bin corresponding to zf
+                    if mah[zbin_min] < masses[-1]:
+                        mbin = np.min(np.where(masses > mah[zbin_min]))
+                        if mah[zbin_min] > mah[zbin_max] and mah[zbin_min] / mah[zbin_max] < 5:
+                            res_sim[mbin] += mah[zbin_min] / mah[zbin_max] - 1
+                            ntot_sim[mbin] += 1
         ps_sim = np.sqrt(res_sim * (1 + res_sim / ntot_sim))
         if save:
             np.savetxt(self.path + '/{}/mah_mergers/av_growth_sim_{:2.1f}_sim_{}_nbins{}'
@@ -360,7 +368,7 @@ class Simulation:
                        .format(self.name, zf, self.name, mbins), np.array(ps_sim))
         return res_sim, ntot_sim, ps_sim
 
-    def large_growth(self, zf, mmin=1e12, mmax=1e14, mbins=20, zbins=20, save=False):
+    def large_growth(self, zf, mmin=1e12, mmax=1e14, mbins=20, zbins=20, save=False, subsample=1):
         """Calculates the fraction of halos at zf that had a major merger during the last dynamical timescale"""
         mahs = self.get_mah()
         zs, dz = get_zlastdyn(zf, h=0.7, om=self.om0, zbins=zbins)
@@ -370,16 +378,17 @@ class Simulation:
         res_sim = np.zeros(mbins)
         ntot_sim = np.zeros(mbins)
         for j in range(len(mahs)):
-            mah = mahs[j]
-            zeds = reds[:len(mah)]
-            if zeds[-1] > zi:
-                zbin_min, zbin_max = np.min(np.where(zeds > zf)), np.min(
-                    np.where(zeds > zi))  # find the snapshot bin corresponding to zf
-                if mah[zbin_min] < masses[-1]:
-                    mbin = np.min(np.where(masses > mah[zbin_min]))
-                    ntot_sim[mbin] += 1
-                    if 1.333 < mah[zbin_min] / mah[zbin_max] < 2:
-                        res_sim[mbin] += 1
+            if np.random.random() < subsample:
+                mah = mahs[j]
+                zeds = reds[:len(mah)]
+                if zeds[-1] > zi:
+                    zbin_min, zbin_max = np.min(np.where(zeds > zf)), np.min(
+                        np.where(zeds > zi))  # find the snapshot bin corresponding to zf
+                    if mah[zbin_min] < masses[-1]:
+                        mbin = np.min(np.where(masses > mah[zbin_min]))
+                        ntot_sim[mbin] += 1
+                        if 1.333 < mah[zbin_min] / mah[zbin_max] < 2:
+                            res_sim[mbin] += 1
         ps_sim = np.sqrt(res_sim * (1 + res_sim / ntot_sim))
         if save:
             np.savetxt(self.path + '/{}/mah_mergers/large_growth_sim_{:2.1f}_sim_{}_nbins{}'
@@ -459,7 +468,7 @@ class Simulation:
                         hprog.append(int(next(lines)[0]))
                     progs.append(hprog)
                 except StopIteration:
-                    val = 5
+                    pass
         mds, mprg, pos_prg = [], [], []
         for i in range(len(desc)):
             if id4_desc > len(desc):

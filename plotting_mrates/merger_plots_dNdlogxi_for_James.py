@@ -1,14 +1,28 @@
-from simulation import *
+import sys
+sys.path.append('/home/painchess/projects_clean/Halo_Analytical_Calculations')
+import merger_rate as mr
+import numpy as np
+from simulation import Simulation
 import matplotlib.pyplot as plt
 import matplotlib as mpl
-from matplotlib import ticker
-import time
-#from numba import jit
+
 params = {'legend.fontsize': 7,
           'legend.handlelength': 2}
 mpl.rcParams['figure.dpi'] = 150
 mpl.rcParams['font.family'] = 'serif'
 plt.rcParams.update(params)
+
+sim_names = ['M25S07', 'M25S08', 'M25S09', 'M03S07', 'M03S08', 'M03S09', 'M35S07', 'M35S08', 'M35S09',
+                 'Illustris', 'bolshoiP', 'bolshoiW', 'M03S08b', 'm25s85', 'm2s8', 'm4s7', 'm4s8', 'm2s9',
+                 'm3s8_50', 'm3s8', 'm35s75', 'm4s9', 'm3s9', 'm25s75', 'm2s1', 'm3s7', 'm3s85', 'm2s7', 'm25s8',
+                 'm35s8', 'm25s9', 'm35s85', 'm3s75', 'm35s9', 'm35s7']
+omegas = [0.25, 0.25, 0.25, 0.3, 0.3, 0.3, 0.35, 0.35, 0.35, 0.309, 0.307, 0.27, 0.3, 0.25, 0.2, 0.4, 0.4, 0.2, 0.3
+        , 0.3, 0.35, 0.4, 0.3, 0.25, 0.2, 0.3, 0.3, 0.2, 0.25, 0.35, 0.25, 0.35, 0.3, 0.35, 0.35]
+sigmas = [0.7, 0.8, 0.9, 0.7, 0.8, 0.9, 0.7, 0.8, 0.9, 0.816, 0.82, 0.82, 0.8, 0.85, 0.8, 0.7, 0.8, 0.9, 0.8
+        , 0.8, 0.75, 0.9, 0.9, 0.75, 1.0, 0.7, 0.85, 0.7, 0.8, 0.8, 0.9, 0.85, 0.75, 0.9, 0.7]
+
+sims = dict(zip(sim_names, list(zip(omegas, sigmas))))
+
 
 
 # sim_selec = np.array([-2, -3])
@@ -73,6 +87,14 @@ dxis, ximeans = xis[1:]-xis[:-1], np.sqrt(xis[1:]*xis[:-1])
 mlims = [1e13]
 sel_reds = np.array([0.05, 0.55, 0.8])
 fig, axs = plt.subplots(3,3, sharex=True, sharey=True, figsize=[11.5,11.5])
+
+
+mrate_path = '/home/painchess/asus_fedora/merger_rate'
+old_path = '/home/painchess/disq2/ahf-v1.0-101/'
+localpath = '/home/painchess/sims/'
+externalpath = '/home/painchess/mounted/HR_sims/niagara/'
+illustris_path = '/home/painchess/mounted/TNG300-625/output'
+
 for k in range(len(mlims)):
     mlim = mlims[k]
 
@@ -102,7 +124,7 @@ for k in range(len(mlims)):
             ax.plot(ximeans,  y, 'o', ms=2,  color='C{}'.format(j),
                      label=r'z = {:1.2f}'.format(reds[snap]))
             ax.fill_between(ximeans, y-tps, y+tps,  color='C{}'.format(j), alpha=0.4)
-            ax.plot(xis[1:-1], ell_mrate_per_n(5*mlim, reds[snap], xis, om0=om, sig8=s8), color='C{}'.format(j),
+            ax.plot(xis[1:-1], mr.ell_mrate_per_n(5*mlim, reds[snap], xis, om0=om, sig8=s8), color='C{}'.format(j),
               linewidth=1.5)
         #plt.title('M > {:1.2e} {}'.format(mlim, sim_names[sim]), size=13)
         ax.set_title(sim_names[sim], size=17)

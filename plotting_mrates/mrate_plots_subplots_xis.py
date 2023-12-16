@@ -1,4 +1,8 @@
-from simulation import *
+import sys
+sys.path.append('/home/painchess/projects_clean/Halo_Analytical_Calculations')
+import merger_rate as mr
+from simulation import Simulation
+import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib as mpl
 params = {'legend.fontsize': 8,
@@ -116,7 +120,7 @@ for p in range(3):
                     s8 = a_sigmas[m]
                     omg = sim1.om0
                 for k in range(zresol):
-                    diff_nmerg[k] = integ_mrate(3 * amlim, nreds[k], xi_min=dexis[i], xi_max=xmax, om0=omg, sig8=s8)
+                    diff_nmerg[k] = mr.integ_mrate(3 * amlim, nreds[k], xi_min=dexis[i], xi_max=xmax, om0=omg, sig8=s8)
                 res.append(np.sum(diff_nmerg) * dz)
             if c_param == '\Omega_m':
 
