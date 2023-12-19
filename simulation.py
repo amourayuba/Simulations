@@ -16,70 +16,124 @@ import csv
 #############--------------- MxSy Simulations --------------#############################
 
 def mcbride_mah(z, gamma, beta):
+    """
+    Fitting formula for a mass accretion history from McBride et al. (2009)
+    :param z: float, redshift
+    :param gamma: float, first fitting parameter
+    :param beta: float, second fitting parameter
+    :return: float, mass fraction at z
+    """
     return (1 + z) ** beta * np.exp(-gamma * z)
 
 
-def get_mrat(pgmasses, wpos=False, m=None, pos_s=None):
+def get_mratio(progenitor_masses, wpos=False, m=None, pos_s=None):
+    """
+    Getting the merger mass ratios given a set of progenitor masses
+    :param progenitor_masses: array, progenitor masses
+    :param wpos: bool, if use positions to determine the order of mergers
+    :param m: int, index of considered halo mass
+    :param pos_s: positions of progenitors
+    :return:
+    """
     if wpos:
         arg_mer = np.argmin(
             np.sum((pos_s[np.arange(len(pos_s)) != m, :] - pos_s[m, :]) ** 2, axis=1))
         if arg_mer >= m:
             arg_mer += 1
-        return pgmasses[m] / pgmasses[arg_mer]
+        return progenitor_masses[m] / progenitor_masses[arg_mer]
     else:
-        pgratios = pgmasses / np.max(pgmasses)
+        pgratios = progenitor_masses / np.max(progenitor_masses)
         return pgratios[np.where(pgratios < 1)]
 
 
-def large_growth_analytical(Mass, zs, s8, om, nxibins=10000):
-    res_ana = []
+def large_growth_analytical(mass, zs, s8, om, nxibins=10000):
+    """
+    Calculates analytically the fraction of halos that experience a growth of more than 30% for a given
+    Omega_m and sigma_m
+    :param mass: float, or array. Mass of the Halo(s) considered.
+    :param zs: array, redshifts over which to calculate the fraction that experienced large growth
+    :param s8: float, sigma_8 of the universe considered
+    :param om: float, Omega_M of the universe considered
+    :param nxibins: int, number of numerical integration steps
+    :return: float, or array if mass is array. Large growth fraction
+    """
+    res_integral = []
     dz = (zs[0] - zs[-1]) / len(zs)
-    if type(Mass) == np.ndarray or type(Mass) == list:
-        for M0 in Mass:
-            res = []
+    if type(mass) == np.ndarray or type(mass) == list:
+        for M0 in mass:
+            res_per_z = []
             for red in zs:
-                res.append(mr.integ_mrate(M0, red, 1 / 3, 1, nxibins=nxibins, mass=False, sig8=s8, om0=om, ol0=1 - om))
-            res_ana.append(np.sum(np.array(res)) * dz)
-        return np.array(res_ana)
+                res_per_z.append(mr.integ_mrate(M0, red, 1 / 3, 1, nxibins=nxibins, mass=False, sig8=s8, om0=om, ol0=1 - om))
+            res_integral.append(np.sum(np.array(res_per_z)) * dz)
+        return np.array(res_integral)
     else:
-        res = []
+        res_per_z = []
         for red in zs:
-            res.append(mr.integ_mrate(Mass, red, 1 / 3, 1, nxibins=nxibins, mass=False, sig8=s8, om0=om, ol0=1 - om))
-        return np.sum(np.array(res)) * dz
+            res_per_z.append(mr.integ_mrate(mass, red, 1 / 3, 1, nxibins=nxibins, mass=False, sig8=s8, om0=om, ol0=1 - om))
+        return np.sum(np.array(res_per_z)) * dz
 
 
-def average_growth_analytical(Mass, zs, s8, om, nxibins=10000):
-    res_ana = []
+def average_growth_analytical(mass, zs, s8, om, nxibins=10000):
+    """
+    Calculates analytically the average growth of halos over redshifts zs for a given
+    Omega_m and sigma_m
+    :param mass: float, or array. Mass of the Halo(s) considered.
+    :param zs: array, redshifts over which to calculate the average growth
+    :param s8: float, sigma_8 of the universe considered
+    :param om: float, Omega_M of the universe considered
+    :param nxibins: int, number of numerical integration steps
+    :return: float, or array if mass is array. Average growth
+    """
+    res_integral = []
     dz = (zs[0] - zs[-1]) / len(zs)
-    if type(Mass) == np.ndarray or type(Mass) == list:
-        for M0 in Mass:
-            res = []
+    if type(mass) == np.ndarray or type(mass) == list:
+        for M0 in mass:
+            res_per_z = []
             for red in zs:
-                res.append(mr.integ_mrate(M0, red, 1e-14, 1, nxibins=nxibins, mass=True, sig8=s8, om0=om, ol0=1 - om) / M0)
-            res_ana.append(np.sum(np.array(res)) * dz)
-        return np.array(res_ana)
+                res_per_z.append(mr.integ_mrate(M0, red, 1e-14, 1, nxibins=nxibins, mass=True, sig8=s8, om0=om, ol0=1 - om) / M0)
+            res_integral.append(np.sum(np.array(res_per_z)) * dz)
+        return np.array(res_integral)
     else:
-        res = []
+        res_per_z = []
         for red in zs:
-            res.append(mr.integ_mrate(Mass, red, 1e-14, 1, nxibins=nxibins, mass=True, sig8=s8, om0=om, ol0=1 - om) / Mass)
-        return np.sum(np.array(res)) * dz
+            res_per_z.append(mr.integ_mrate(mass, red, 1e-14, 1, nxibins=nxibins, mass=True, sig8=s8, om0=om, ol0=1 - om) / mass)
+        return np.sum(np.array(res_per_z)) * dz
 
 
-def get_zlastdyn(zf, h, om, zbins=20):
+def get_zlastdyn(zf, h, om, nzbins=20):
+    """
+    Gives the redshifts until one dynamical time before zf for a given hubble factor and Omega_m
+    :param zf: float, final redshift of the considered object.
+    :param h: float, hubble parameter h=H0/100
+    :param om: float, Omega_m
+    :param nzbins: number of redshift bins between last dynamical time and final redshift
+    :return: zs: array of redshifts
+            dz: float, redshift bin size
+    """
     cosmol = LambdaCDM(H0=100 * h, Om0=om, Ode0=1 - om)
     infall = 1.44 / cp.hubble_ratio(zf, omega_m0=om, omega_l0=1 - om)  # infall time in gyr
     ages = cosmol.age(zf).value
     last_tdyn = ages - np.sqrt(2) * infall
     zi = z_at_value(cosmol.age, last_tdyn * u.Gyr).value
-    zs = np.linspace(zi, zf, zbins)
-    dz = (zi - zf) / zbins
+    zs = np.linspace(zi, zf, nzbins)
+    dz = (zi - zf) / nzbins
     return zs, dz
 
 
 class Simulation:
-    """A class of objects referring to a Dark Matter only simulation"""
-
+    """A class of objects referring to a Dark Matter only simulation
+    The simulations that this class was written for have specific formats, with halos, merger trees and
+     mass accretion histories found and measured through the Amiga Halo Finder, and are supposed to have specific files
+     located in appropriate locations from 'simpath'. Unless you are using the specific simulations and
+      files this simulation is meant for, I'd be cautious on how to use the methods below, and try
+      to adapt the codes."""
     def __init__(self, name, om0, sig8, path):
+        """
+        :param name: str, name of the simulation. data files will be saved and reference this name
+        :param om0: float, the value of Omega_m of the simulation.
+        :param sig8: float, the value of s8 of the simulation.
+        :param path: str, base path of the simulation, other data have to be in specific folder from the base path
+        """
         self.name = name  # name of the simulation
         self.om0 = om0  # Value of Omega_m for the simulation
         self.sig8 = sig8  # Value of sigma_8
@@ -98,18 +152,24 @@ class Simulation:
             return np.loadtxt(self.path + 'redshifts/mxsy_reds.txt')
 
     def get_prefs(self):
-        """Gets the list of prefixes of each file for all available snapshots"""
+        """Gets the list of AHF prefixes of each file for all available snapshots"""
         with open(self.path + self.name + '/' + self.name + '_prefixes.txt') as file:
             prefs = file.read().splitlines()  # Names of each snapshot prefix.
         return prefs
 
     def read_halos(self, snapshot=0):
-        """Read the halo file associated with this simulation and snapshot"""
+        """Read the AHF_halo file associated with this simulation and snapshot"""
         prefs = self.get_prefs()
         return pd.read_table(self.path + self.name + '/halos/' + prefs[snapshot] + '.AHF_halos', delim_whitespace=True,
                              header=0)
 
     def get_2dprop(self, prop, snapshot=0):
+        """
+        Gets the specific 2D property needed from the 2D property data finle
+        :param prop: str, 2D property of concert
+        :param snapshot: int, snapshot considered
+        :return: array, value of the property for each halo in the snapshot
+        """
         props = {'Conc': 0, r'$\chi^2_M$': 1, r'$\chi^2_\rho$': 2, 'axis_ratio': 3, 'axis_angle': -3, 'mbp_offset': -2,
                  'com_offset': -1}
         props2d = np.load(self.path + self.name + '/data/nprops2D_{}_snap{}.npy'.format(self.name, 118 - snapshot),
@@ -120,6 +180,12 @@ class Simulation:
         return prop_array
 
     def get_3dprop(self, prop, snapshot=0):
+        """
+        Gets the specific 3D property needed from the 3D property data finle
+        :param prop: str, 3D property of concert
+        :param snapshot: int, snapshot considered
+        :return: array, value of the property for each halo in the snapshot
+        """
         props = {'Conc': 0, r'$\chi^2_M$': 1, r'$\chi^2_\rho$': 2}
         props2d = np.load(self.path + self.name + '/data/nprops3D_{}_snap{}.npy'.format(self.name, 118 - snapshot),
                           allow_pickle=True)
@@ -129,34 +195,51 @@ class Simulation:
         return prop_array
 
     def make_structure_data(self, mmin, mmax, propage='z50', ztype='zx', snap=0, maxval=50, save=True):
+        """
+        Makes and saves two tables containing 2D and 3D structural properties with a given age property "propage"
+        :param mmin: float, minimum halo mass limit
+        :param mmax: float, maximum halo mass limit
+        :param propage: str, specific age property to consider
+        :param ztype: str, type of age property "zx", "zmm" or "mofz"
+        :param snap: int, snapshot considered
+        :param maxval: int, limit on the value of age property to not consider cases where the value hasn't been
+        calculated properly
+        :param save: bool, whether to save the data or not
+        :return: data3D, data2D r: astropy table with the relevent 3D/2D sturctural propeties and the age property
+        """
         reds = self.get_redshifts()
-        agedata = self.get_agedata(z=reds[snap], atype=ztype)
-        mass_indx = self.get_agedata(z=reds[snap], atype='oth')
+        agedata = self.get_agedata(z=reds[snap], atype=ztype) # The relevent age data for each halo
+        mass_indx = self.get_agedata(z=reds[snap], atype='oth') # The indexes associated with each halo
 
+        # Loading structural properties
         props2d = np.load(self.path + self.name + '/data/nprops2D_{}_snap{}.npy'.format(self.name, 118 - snap),
                           allow_pickle=True)
         props3d = np.load(self.path + self.name + '/data/nprops3D_{}_snap{}.npy'.format(self.name, 118 - snap),
                           allow_pickle=True)
 
+        # These lines link the halo_id to an index going from 0 to Nhalos
         halids = np.array(self.read_halos(snapshot=snap)['#ID(1)'], dtype=int)
         idkeys = dict(zip(halids, np.arange(len(halids))))
         del halids
 
+        # These lines remove the halos where the age property hasn't been measured correctly
         cl_data = agedata[agedata[propage] < maxval].reset_index(drop=True)
         clm_indx = mass_indx[agedata[propage] < maxval].reset_index(drop=True)
         del agedata, mass_indx
 
         comb_data2d, comb_data3d = [], []
         for i in range(len(cl_data)):
-            if mmin < clm_indx.loc[i]['Mass'] < mmax:
-                hid = clm_indx['Halo_index'].loc[i]
-                halidx = idkeys[hid]
+            if mmin < clm_indx.loc[i]['Mass'] < mmax: # Check if halo mass in mass range considered
+                hid = clm_indx['Halo_index'].loc[i] # Get the halo id
+                halidx = idkeys[hid] # Get its associated index to find the halo in the 2d/3d structural property tables
+                # Save all properties for each considered halos to create a table
                 comb_data3d.append([halidx, cl_data.loc[i][propage], props3d[halidx][0],
                                     props3d[halidx][1][0], props3d[halidx][1][1], props3d[halidx][2][0],
                                     props3d[halidx][2][1]])
                 comb_data2d.append([halidx, cl_data.loc[i][propage], props2d[halidx][0],
                                     props2d[halidx][1][0], props2d[halidx][1][1], props2d[halidx][2][0],
                                     props2d[halidx][2][1], props2d[halidx][3], props2d[halidx][5], props2d[halidx][6]])
+        # Create the two tables with the appropriate titles
         data3d = Table(np.array(comb_data3d),
                        names=['Halo_index', propage, 'Conc', r'$\chi^2_\rho$', 'log_Chi_rho', r'$\chi^2_M$',
                               'log_Chi_M'])
@@ -164,6 +247,7 @@ class Simulation:
                        names=['Halo_index', propage, 'Conc', r'$\chi^2_\rho$', 'log_Chi_rho', r'$\chi^2_M$',
                               'log_Chi_M',
                               'axis_ratio', 'mbp_off', 'com_off'])
+
         if save:
             ascii.write(data3d,
                         self.path + self.name + '/data/{}_{}_dat3d_{:1.2e}.dat'.format(propage, self.name, mmin),
@@ -207,6 +291,14 @@ class Simulation:
 
     ###################-----------------MASS ACCRETION HISTORY RELATED QUANTITIES----------------#######################
     def make_mah(self, save=False, fsizelim=1500):
+        """
+        Making mass accretion histories from AHF MAH files located in a folder mahs
+        :param save: bool, whether to save them.
+        :param fsizelim: int, minimum fileze limit in octets to avoid halos with no progenitors, or only one.
+        :return: mahs: array arrays, mass accretion histories for each halo
+                ids: array of int, halo id of each mahs
+                emptyfiles: list of empty files that are not considered
+        """
         mahs, ids, emptyfiles = [], [], []
         filenames = os.listdir(self.path + self.name + '/mahs')
         filenames.sort()
@@ -337,10 +429,10 @@ class Simulation:
     def get_agedata(self, z, atype='oth'):
         return pd.read_csv(self.path + '/{}/data/{}t_{}_z{}.dat'.format(self.name, atype, self.name, z))
 
-    def average_growth(self, zf, mmin=1e12, mmax=1e14, mbins=20, zbins=20, save=False, subsample=1):
+    def average_growth(self, zf, mmin=1e12, mmax=1e14, mbins=20, nzbins=20, save=False, subsample=1):
         """Calculates the average growth over the last dynamical timescale of halos between mmin and mmax at zf"""
         mahs = self.get_mah()
-        zs, dz = get_zlastdyn(zf, h=0.7, om=self.om0, zbins=zbins)
+        zs, dz = get_zlastdyn(zf, h=0.7, om=self.om0, nzbins=nzbins)
         zi = np.max(zs)
         reds = self.get_redshifts()
         masses = np.logspace(np.log10(mmin), np.log10(mmax), mbins)
@@ -368,10 +460,10 @@ class Simulation:
                        .format(self.name, zf, self.name, mbins), np.array(ps_sim))
         return res_sim, ntot_sim, ps_sim
 
-    def large_growth(self, zf, mmin=1e12, mmax=1e14, mbins=20, zbins=20, save=False, subsample=1):
+    def large_growth(self, zf, mmin=1e12, mmax=1e14, mbins=20, nzbins=20, save=False, subsample=1):
         """Calculates the fraction of halos at zf that had a major merger during the last dynamical timescale"""
         mahs = self.get_mah()
-        zs, dz = get_zlastdyn(zf, h=0.7, om=self.om0, zbins=zbins)
+        zs, dz = get_zlastdyn(zf, h=0.7, om=self.om0, nzbins=nzbins)
         zi = np.max(zs)
         reds = self.get_redshifts()
         masses = np.logspace(np.log10(mmin), np.log10(mmax), mbins)
@@ -513,18 +605,18 @@ class Simulation:
             if mlim < mass < 1000 * mlim:
                 tnds += xis > mmin / (mass - mmin)
                 if len(mprg[i]) > 1:
-                    pgmasses = np.array(mprg[i])
+                    progenitor_masses = np.array(mprg[i])
                     if wpos:
-                        for m in range(len(pgmasses)):
+                        for m in range(len(progenitor_masses)):
                             pos_s = np.array(prog_pos[i])
-                            rat = get_mrat(pgmasses, wpos, m, pos_s)
+                            rat = get_mratio(progenitor_masses, wpos, m, pos_s)
                             if rat < 1:
                                 for j in range(bins):
                                     if (rat > xis[j]) and (rat < xis[j + 1]):
                                         nmgs[j] += 1
-                                        tnds += np.max(pgmasses) * xis > mmin
+                                        tnds += np.max(progenitor_masses) * xis > mmin
                     else:
-                        rat = get_mrat(pgmasses, wpos)
+                        rat = get_mratio(progenitor_masses, wpos)
                         for xs in rat:
                             for j in range(bins):
                                 if (xs > xis[j]) and (xs < xis[j + 1]):
@@ -548,16 +640,16 @@ class Simulation:
                     # print(xilim)
                     tnds[:, k] += xilim < dexis
                     if len(mprg[i]) > 1:
-                        pgmasses = mprg[i]
+                        progenitor_masses = mprg[i]
                         if wpos:
                             pos_s = np.array(prog_pos[i])
-                            for m in range(len(pgmasses)):
-                                rat = get_mrat(pgmasses, wpos, m, pos_s)
+                            for m in range(len(progenitor_masses)):
+                                rat = get_mratio(progenitor_masses, wpos, m, pos_s)
                                 if rat < 1:
                                     mres[:, k] += rat > dexis
                                     tnds[:, k] += xilim < dexis
                         else:
-                            pgratios = pgmasses / np.max(pgmasses)
+                            pgratios = progenitor_masses / np.max(progenitor_masses)
                             for rat in pgratios:
                                 if rat < 1:
                                     mres[:, k] += rat > dexis
