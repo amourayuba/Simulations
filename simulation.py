@@ -334,20 +334,40 @@ class Simulation:
 
     ###########################---------------CALCULATIONS WITH MAHS-------------------#################################
 
-    def make_zxs(self, z, save=True, minsnapdist=5, jump_frac=(30, 25, 20, 10), snapnums=(11, 27, 59, 79, 89),
-                 fracs=(90, 75, 50, 10, 1)):
-
+    def make_zxs(self, z, save=True, min_snap_dist=5, jump_fraction=(30, 25, 20, 10), snapnums=(11, 27, 59, 79, 89),
+                 fractions=(90, 75, 50, 10, 1)):
+        """
+        Measures and saves various halo age properties from halos and mass accretio histories. Requires MAHs to be saved.
+        :param z: float, Redshift of the halos
+        :param save: bool, whether to save the age data after measuring them
+        :param min_snap_dist: int, default=5.  minimum number of snapshots to where to consider calculating last major mass jump
+        :param jump_fraction: tuple of int or floats. Mass jumps fractions to measure. 30 means Look at last
+        time halo mass increased by at least 30%.
+        :param snapnums: tuple of int. Snapshots where to store M/M_0 (z)
+        :param fractions: tuple of int/float. fraction of the mass at z0 to at which to record the redshift.
+        if fraction = 50, then record redshift at which the mass has been 50/100 of its z0 mass.
+        :return:
+        zxt: table containing z where mass was fractions of its z0 mass
+        zmmt: table containing z of last mass jump of at least jump_fraction
+        mofzt: table containing mass fraction at each of the given snapnums
+        otht: table containing halo id of each halo and McBribe 2009 fitting parameters
+        """
+        # Loading the Mass Accretion Histories, and the Halo IDs of each.
         mahs = self.get_mah()
         idxs = self.get_mah_ids()
         reds = self.get_redshifts()
+
         nhalos = len(mahs)
         if nhalos != len(idxs):
             raise ValueError("Problem with MAHs and Ids not the same length")
+        # Index of the first snapshot to consider
         snapi = np.min(np.where(reds >= z))
 
+        # Snapshots to consider
         mofz_snaps = np.where(np.array(snapnums) > snapi)[0]
 
-        if len(mofz_snaps) > 0:
+        # Data for the mofz table
+        if len(mofz_snaps) > 0: # If there are any snapshots to consider saving
             mofz = True
             numi = np.min(mofz_snaps)
             rsnaps = snapnums[numi:]
@@ -355,56 +375,70 @@ class Simulation:
         else:
             mofz = False
 
+        # Data for the oth table
         indices_i, gamma, beta, mass_i = [], [], [], []
 
-        zx_i = dict(zip(fracs, [[] for _ in range(len(fracs))]))
-        zmm_i = dict(zip(jump_frac, [[] for _ in range(len(jump_frac))]))
+        # Data for the zx table
+        zx_i = dict(zip(fractions, [[] for _ in range(len(fractions))]))
 
+        # Data for the zmm table
+        zmm_i = dict(zip(jump_fraction, [[] for _ in range(len(jump_fraction))]))
+
+        # Going through each halo and its Mass Accretion History
         for i in range(len(mahs)):
-            mah = mahs[i][snapi:]
-            zeds = reds[snapi:len(mah) + snapi]
-            if len(mah) > minsnapdist:
-                m = mah[0]
-                if mofz:
+            mah = mahs[i][snapi:] # Mass accretion history to consider
+            zeds = reds[snapi:len(mah) + snapi] # Redshifts of the considered MAH
+
+
+            if len(mah) > min_snap_dist: # Only consider the halo if the MAH is longer than the minimum length chosen
+                m = mah[0] # Mass at z0
+
+                # Measurement of mofz
+                if mofz: # If recording mofz
                     for k in range(len(rsnaps)):
                         if len(mah) > rsnaps[k]:
                             mofzs[i, k] = mah[rsnaps[k]] / m
 
-                immfracs = mah[:-minsnapdist] / mah[minsnapdist:] - 1
-                for p in range(len(jump_frac)):
-                    frc = jump_frac[p] / 100
-                    jump_idx = np.where(immfracs >= frc)[0]
-                    if len(jump_idx) > 0:
-                        res = np.sqrt(zeds[np.min(jump_idx)] * zeds[np.min(jump_idx) + minsnapdist])
-                        zmm_i[jump_frac[p]].append(res)
-                    else:
-                        zmm_i[jump_frac[p]].append(123)
+                # Measurement of zmms
+                immfractions = mah[:-min_snap_dist] / mah[min_snap_dist:] - 1 # Mass fractions along the halo history
 
-                for j in range(len(fracs)):
-                    frac = fracs[j] / 100
-                    ids = np.where(mah / m < frac)
-                    if len(ids[0]) > 0:
-                        idx = np.min(np.where(mah / m < frac))
+                for p in range(len(jump_fraction)): # For each considered jump fraction
+                    frc = jump_fraction[p] / 100
+                    jump_idx = np.where(immfractions >= frc)[0] # Find the first halo index at which it made that jump
+
+                    if len(jump_idx) > 0: # If that jump happened, store it
+                        res = np.sqrt(zeds[np.min(jump_idx)] * zeds[np.min(jump_idx) + min_snap_dist])
+                        zmm_i[jump_fraction[p]].append(res)
+                    else: # If it didn't, store an arbitrary high value. Here equivalent z = 123, start of the simulation
+                        zmm_i[jump_fraction[p]].append(123)
+
+                # Measurement of zxs
+                for j in range(len(fractions)): # For each considered mass fraction
+                    fraction = fractions[j] / 100
+                    ids = np.where(mah / m < fraction) # Find the index where the mass was below the considered fraction of z0 mass
+                    if len(ids[0]) > 0: # If it exists, save the redshift
+                        idx = np.min(np.where(mah / m < fraction))
                         zx = np.sqrt(zeds[idx] * zeds[idx - 1])
-                        zx_i[fracs[j]].append(zx)
-                    else:
-                        zx_i[fracs[j]].append(np.inf)
-                try:
+                        zx_i[fractions[j]].append(zx)
+                    else: # If it doesn't save infinity as value.
+                        zx_i[fractions[j]].append(np.inf)
+                # Measurement of McBribe 2009 fitting parameters
+                try: # If fitting succeeds, save them
                     param, cov = curve_fit(mcbride_mah, zeds, mah / m)
                     gamma.append(param[0])
                     beta.append(param[1])
-                except RuntimeError:
+                except RuntimeError: # If it doesn't, save an arbitrarily small value
                     gamma.append(-1e50)
                     beta.append(-1e50)
 
-                mass_i.append(m)
-                indices_i.append(idxs[i])
+                mass_i.append(m) # Save the halo mass at z0
+                indices_i.append(idxs[i]) # Save the halo Id
 
         mass_i, indices_i, gamma, beta = np.array(mass_i), np.array(indices_i, dtype=int), np.array(gamma), np.array(
             beta)
 
-        nameszx = ['z{}'.format(frac) for frac in fracs]
-        nameszmm = ['zmm{}'.format(jfrac) for jfrac in jump_frac]
+        nameszx = ['z{}'.format(fraction) for fraction in fractions]
+        nameszmm = ['zmm{}'.format(jfraction) for jfraction in jump_fraction]
         namesmofz = ['M/M0(z={:1.1f})'.format(reds[rsnp]) for rsnp in rsnaps]
         names = ['McBride_gamma', 'McBride_beta', 'Mass', 'Halo_index']
 
@@ -427,29 +461,48 @@ class Simulation:
         return zxt, zmmt, mofzt, otht
 
     def get_agedata(self, z, atype='oth'):
+        """
+        Load specific age property from file located in the right directory.
+        :param z: float, redshift
+        :param atype: str, type of age data, either zx, zmm, mofz or oth
+        :return: pandas dataframe, the specific age data for all halos
+        """
         return pd.read_csv(self.path + '/{}/data/{}t_{}_z{}.dat'.format(self.name, atype, self.name, z))
 
-    def average_growth(self, zf, mmin=1e12, mmax=1e14, mbins=20, nzbins=20, save=False, subsample=1):
-        """Calculates the average growth over the last dynamical timescale of halos between mmin and mmax at zf"""
-        mahs = self.get_mah()
-        zs, dz = get_zlastdyn(zf, h=0.7, om=self.om0, nzbins=nzbins)
+    def average_growth(self, zf, mmin=1e12, mmax=1e14, mbins=20, save=False, h=0.7, subsample_fraction=1):
+        """Calculates the average growth over the last dynamical timescale of halos between mmin and mmax at zf
+        :param zf: float, redshift at final state of halo.
+        :param mmin: float, lower bound of the considered mass range
+        :param mmax: float, higher bound of the considered mass range
+        :param mbins: int, number of mass bins between mmin and mmax
+        :param save: bool, whether to save the data.
+        :param h, float, hubble parameter
+        :param subsample_fraction: float between 0 and 1.
+        :return:
+        res_sim: array, Total growth for each mass bin
+        ntot_sim: array, Number of halos in each mass bin
+        ps_sim: array, poissonian errors in each mass bin
+        """
+        mahs = self.get_mah() # Loads the MAH. MAH file need to be there.
+        zs, dz = get_zlastdyn(zf, h=h, om=self.om0, nzbins=20) # Finds z at last dynamical time
         zi = np.max(zs)
         reds = self.get_redshifts()
         masses = np.logspace(np.log10(mmin), np.log10(mmax), mbins)
-        res_sim = np.zeros(mbins)
-        ntot_sim = np.zeros(mbins)
+        res_sim, ntot_sim = np.zeros(mbins), np.zeros(mbins)
+
+        # Go over each halo
         for j in range(len(mahs)):
-            if np.random.random() < subsample:
+            if np.random.random() < subsample_fraction: # If want a random subsample of halos
                 mah = mahs[j]
                 zeds = reds[:len(mah)]
-                if zeds[-1] > zi:
+                if zeds[-1] > zi: # Check if halo's MAH goes at least until last dynamical time
                     zbin_min, zbin_max = np.min(np.where(zeds > zf)), np.min(
                         np.where(zeds > zi))  # find the snapshot bin corresponding to zf
-                    if mah[zbin_min] < masses[-1]:
-                        mbin = np.min(np.where(masses > mah[zbin_min]))
-                        if mah[zbin_min] > mah[zbin_max] and mah[zbin_min] / mah[zbin_max] < 5:
-                            res_sim[mbin] += mah[zbin_min] / mah[zbin_max] - 1
-                            ntot_sim[mbin] += 1
+                    if mah[zbin_min] < masses[-1]: # If the mass in the mass range considered
+                        mbin = np.min(np.where(masses > mah[zbin_min])) # Find the mass bin
+                        if mah[zbin_min] > mah[zbin_max] and mah[zbin_min] / mah[zbin_max] < 5: # Avoid big sudden jumps, and decreasing masses
+                            res_sim[mbin] += mah[zbin_min] / mah[zbin_max] - 1  # Save the growth fraction
+                            ntot_sim[mbin] += 1 # Add to the number of halos in the bin
         ps_sim = np.sqrt(res_sim * (1 + res_sim / ntot_sim))
         if save:
             np.savetxt(self.path + '/{}/mah_mergers/av_growth_sim_{:2.1f}_sim_{}_nbins{}'
@@ -460,26 +513,38 @@ class Simulation:
                        .format(self.name, zf, self.name, mbins), np.array(ps_sim))
         return res_sim, ntot_sim, ps_sim
 
-    def large_growth(self, zf, mmin=1e12, mmax=1e14, mbins=20, nzbins=20, save=False, subsample=1):
-        """Calculates the fraction of halos at zf that had a major merger during the last dynamical timescale"""
-        mahs = self.get_mah()
-        zs, dz = get_zlastdyn(zf, h=0.7, om=self.om0, nzbins=nzbins)
+    def large_growth(self, zf, mmin=1e12,  mmax=1e14, mbins=20, h=0.7, save=False, subsample_fraction=1):
+        """Calculates the fraction of halos at zf that had a major merger during the last dynamical timescale
+        :param zf: float, redshift at final state of halo.
+        :param mmin: float, lower bound of the considered mass range
+        :param mmax: float, higher bound of the considered mass range
+        :param mbins: int, number of mass bins between mmin and mmax
+        :param save: bool, whether to save the data.
+        :param subsample_fraction: float between 0 and 1.
+        :return:
+        res_sim: array, Number of halos that had a large fraction for each mass bin
+        ntot_sim: array, Number of halos in each mass bin
+        ps_sim: array, poissonian errors in each mass bin
+        """
+        mahs = self.get_mah() # Loads the MAH. MAH file need to be there.
+        zs, dz = get_zlastdyn(zf, h=h, om=self.om0, nzbins=20) # Finds z at last dynamical time
         zi = np.max(zs)
         reds = self.get_redshifts()
         masses = np.logspace(np.log10(mmin), np.log10(mmax), mbins)
-        res_sim = np.zeros(mbins)
-        ntot_sim = np.zeros(mbins)
+        res_sim, ntot_sim = np.zeros(mbins), np.zeros(mbins)
+
+        # Go over each halo
         for j in range(len(mahs)):
-            if np.random.random() < subsample:
+            if np.random.random() < subsample_fraction: # If want a random subsample of halos
                 mah = mahs[j]
                 zeds = reds[:len(mah)]
-                if zeds[-1] > zi:
+                if zeds[-1] > zi: # Check if halo's MAH goes at least until last dynamical time
                     zbin_min, zbin_max = np.min(np.where(zeds > zf)), np.min(
-                        np.where(zeds > zi))  # find the snapshot bin corresponding to zf
-                    if mah[zbin_min] < masses[-1]:
-                        mbin = np.min(np.where(masses > mah[zbin_min]))
-                        ntot_sim[mbin] += 1
-                        if 1.333 < mah[zbin_min] / mah[zbin_max] < 2:
+                        np.where(zeds > zi))  # find the snapshot bin corresponding to zf and zi
+                    if mah[zbin_min] < masses[-1]: # If the mass in the mass range considered
+                        mbin = np.min(np.where(masses > mah[zbin_min])) # Find the mass bin
+                        ntot_sim[mbin] += 1 # Add to the total of the mass bin
+                        if 1.333 < mah[zbin_min] / mah[zbin_max] < 2: # If there has been large growth, add to the count
                             res_sim[mbin] += 1
         ps_sim = np.sqrt(res_sim * (1 + res_sim / ntot_sim))
         if save:
@@ -492,6 +557,15 @@ class Simulation:
         return res_sim, ntot_sim, ps_sim
 
     def load_large_growth(self, mbins, zf):
+        """
+        Loads saved large growth fraction files saved through large_growth() method
+        :param mbins: int, number of mass bins
+        :param zf: float, redshift.
+        :return:
+        res_sim: array, Number of halos that had a large fraction for each mass bin
+        ntot_sim: array, Number of halos in each mass bin
+        ps_sim: array, poissonian errors in each mass bin
+        """
         res_sim = np.loadtxt(self.path + '/{}/mah_mergers/large_growth_sim_{:2.1f}_sim_{}_nbins{}'
                              .format(self.name, zf, self.name, mbins))
         ntot_sim = np.loadtxt(self.path + '/{}/mah_mergers/large_growth_ntot_sim_{:2.1f}_sim_{}_nbins{}'
@@ -501,6 +575,15 @@ class Simulation:
         return res_sim, ntot_sim, ps_sim
 
     def load_av_growth(self, mbins, zf):
+        """
+        Loads saved average growth files saved through large_growth() method
+        :param mbins: int, number of mass bins
+        :param zf: float, redshift.
+        :return:
+        res_sim: array, Total growth for each mass bin
+        ntot_sim: array, Number of halos in each mass bin
+        ps_sim: array, poissonian errors in each mass bin
+        """
         res_sim = np.loadtxt(self.path + '/{}/mah_mergers/av_growth_sim_{:2.1f}_sim_{}_nbins{}'
                              .format(self.name, zf, self.name, mbins))
         ntot_sim = np.loadtxt(self.path + '/{}/mah_mergers/av_growth_ntot_sim_{:2.1f}_sim_{}_nbins{}'
@@ -591,6 +674,18 @@ class Simulation:
         return np.array(mds, dtype=object), np.array(mprg, dtype=object)
 
     def dndxi(self, snap, mlim, bins=20, ximin=1e-2, ximax=1.0, wpos=False):
+        """
+        Measures the merger rate per halo per dz per merger ratio xi
+        :param snap: int, snapshot number
+        :param mlim: float, minimum mass range
+        :param bins: int, number of merger mass ratio bins
+        :param ximin: float, minimum merger ratio
+        :param ximax: float, maximum merger ratio
+        :param wpos: bool, default False (DO NOT CHANGE. FEATURE NOT READY). Whether to use progenitor positions to
+        find sequence of mergers
+        :return: nmgs: array, number of mergers
+                tnds: array, number of halos in each bin. Corrected for selection effect.
+        """
         if wpos:
             mds, mprg, prog_pos = self.get_desc_prog(snap, wpos)
         else:
@@ -624,6 +719,18 @@ class Simulation:
         return nmgs, tnds
 
     def N_of_xi(self, snaps, mlim, mlim_rat=1e3, ximin=0.01, resol=100, wpos=False):
+        """
+        Measures the merger rate per halo per dz integrated between ximin and 1
+        :param snaps: array, snapshots to consider
+        :param mlim: float, minimum mass range
+        :param mlim_rat: float, mlim_rat*mlim is the maximum mass range
+        :param ximin: float, minimum merger mass ratio
+        :param resol: int, number of integration steps
+        :param wpos: bool, default False (DO NOT CHANGE. FEATURE NOT READY). Whether to use progenitor positions to
+        find sequence of mergers
+        :return: mres: array, cummulative number of mergers
+                tnds: array, number of halos in each bin. Corrected for selection effect.
+        """
         mres = np.zeros((resol, len(snaps)))
         tnds = np.zeros((resol, len(snaps)))
         dexis = np.logspace(np.log10(ximin), 0, resol)
